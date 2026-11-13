@@ -1,0 +1,23 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="Directory.Build.props" />
+    <File Path="README.md" />
+  </Folder>
+  <!-- Core layers shared with the web app (same entities, EF Core model,
+       SQL Server database, Identity store, soft delete, lookup tables, audit). -->
+  <Folder Name="/core (shared with web app)/">
+    <Project Path="../NaijaPrimeSchoolWeb/src/NaijaPrimeSchool.Domain/NaijaPrimeSchool.Domain.csproj" />
+    <Project Path="../NaijaPrimeSchoolWeb/src/NaijaPrimeSchool.Application/NaijaPrimeSchool.Application.csproj" />
+    <Project Path="../NaijaPrimeSchoolWeb/src/NaijaPrimeSchool.Infrastructure/NaijaPrimeSchool.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/NaijaPrimeSchool.Mobile.Contracts/NaijaPrimeSchool.Mobile.Contracts.csproj" />
+    <Project Path="src/NaijaPrimeSchool.Mobile.Api/NaijaPrimeSchool.Mobile.Api.csproj" />
+    <Project Path="src/NaijaPrimeSchool.Mobile.Shared/NaijaPrimeSchool.Mobile.Shared.csproj" />
+    <Project Path="src/NaijaPrimeSchool.Mobile/NaijaPrimeSchool.Mobile.csproj">
+      <Deploy />
+    </Project>
+    <Project Path="src/NaijaPrimeSchool.Mobile.Web/NaijaPrimeSchool.Mobile.Web.csproj" />
+    <Project Path="src/NaijaPrimeSchool.Mobile.Web.Client/NaijaPrimeSchool.Mobile.Web.Client.csproj" />
+  </Folder>
+</Solution>

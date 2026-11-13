@@ -1,0 +1,53 @@
+@page "/finance/payments"
+@attribute [Authorize(Roles = RoleGroups.Finance)]
+@inject FinanceClient Finance
+
+<PageHeader Title="Payments" Subtitle="@($"{items.Count} receipts · {Format.Money(items.Sum(p => p.Amount))}")">
+    <Actions>
+        <RadzenButton Text="Record" Icon="add_card" Size="ButtonSize.Small" Click="@(() => Nav.NavigateTo("finance/payments/new"))" />
+    </Actions>
+</PageHeader>
+
+<div class="nps-filters">
+    <RadzenTextBox @bind-Value="search" Placeholder="Receipt, pupil or reference" Style="flex:2;min-width:0" @onkeydown="OnSearchKey" />
+    <RadzenDatePicker TValue="DateOnly?" @bind-Value="from" @bind-Value:after="LoadDataAsync" DateFormat="d MMM" Placeholder="From" AllowClear="true" Style="flex:1;min-width:7rem" />
+    <RadzenDatePicker TValue="DateOnly?" @bind-Value="to" @bind-Value:after="LoadDataAsync" DateFormat="d MMM" Placeholder="To" AllowClear="true" Style="flex:1;min-width:7rem" />
+</div>
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (items.Count == 0)
+    {
+        <EmptyState Icon="receipt_long" Title="No payments in this range" />
+    }
+    <Virtualize Items="items" Context="p" ItemSize="72">
+        <ListRow Href="@($"finance/payments/{p.Id}")" Title="@p.StudentName" Subtitle="@($"{p.ReceiptNumber} · {Format.Date(p.PaidOn)} · {p.PaymentMethodName}")">
+            <Leading><StudentAvatar PhotoUrl="@p.StudentPhotoUrl" FirstName="@p.StudentFirstName" LastName="@p.StudentLastName" /></Leading>
+            <Trailing>
+                <div class="nps-right">
+                    <span class="nps-amount">@Format.Money(p.Amount)</span>
+                    <StatusBadge Code="@p.PaymentStatusCode" Text="@p.PaymentStatusName" />
+                </div>
+            </Trailing>
+        </ListRow>
+    </Virtualize>
+</PageState>
+
+@code {
+    private List<PaymentDto> items = [];
+    private string? search;
+    private DateOnly? from = DateOnly.FromDateTime(DateTime.Today.AddDays(-30));
+    private DateOnly? to;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await LoadDataAsync();
+    }
+
+    private Task LoadDataAsync() => LoadAsync(async () => items = await Finance.PaymentsAsync(search, from, to));
+
+    private async Task OnSearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await LoadDataAsync();
+    }
+}

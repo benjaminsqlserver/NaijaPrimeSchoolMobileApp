@@ -1,0 +1,21 @@
+@page "/portal/student/fees"
+@attribute [Authorize(Roles = Roles.Student)]
+@inject PortalClient Portal
+
+<PageHeader Title="My fees" Subtitle="Invoices and receipts" />
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    <LedgerView Ledger="fees?.Ledger" CanPay="fees?.CanPayOnline == true" />
+</PageState>
+
+@code {
+    private StudentFeesDto? fees;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await LoadDataAsync();
+    }
+
+    private Task LoadDataAsync() => LoadAsync(async () => fees = await Portal.MyFeesAsync());
+}

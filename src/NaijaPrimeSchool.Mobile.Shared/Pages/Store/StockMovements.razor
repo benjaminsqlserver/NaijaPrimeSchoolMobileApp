@@ -1,0 +1,50 @@
+@page "/store/movements"
+@attribute [Authorize(Roles = RoleGroups.Store)]
+@inject StoreClient Store
+@inject LookupClient Lookups
+
+<PageHeader Title="Stock movements" Subtitle="@($"{items.Count} entries")">
+    <Actions>
+        <RadzenButton Text="Record" Icon="post_add" Size="ButtonSize.Small" Click="@(() => Nav.NavigateTo("store/movements/new"))" />
+    </Actions>
+</PageHeader>
+
+<div class="nps-filters">
+    <RadzenTextBox @bind-Value="search" Placeholder="Item, number or reference" Style="flex:2;min-width:0" @onkeydown="OnSearchKey" />
+    <RadzenDropDown TValue="Guid?" @bind-Value="typeId" Data="types" TextProperty="Name" ValueProperty="Id" AllowClear="true"
+                    Placeholder="All types" Change="@(_ => LoadDataAsync())" Style="flex:1;min-width:7rem" />
+</div>
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (items.Count == 0)
+    {
+        <EmptyState Icon="swap_vert" Title="No movements match" />
+    }
+    <Virtualize Items="items" Context="m" ItemSize="64">
+        <MovementRow Movement="m" OnClick="@(() => Nav.NavigateTo($"store/items/{m.StoreItemId}"))" />
+    </Virtualize>
+</PageState>
+
+@code {
+    private List<StockMovementDto> items = [];
+    private List<LookupDto> types = [];
+    private string? search;
+    private Guid? typeId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await LoadAsync(async () =>
+        {
+            types = await Lookups.GetAsync(LookupClient.StockMovementTypes);
+            items = await Store.MovementsAsync(search, typeId, null, null);
+        });
+    }
+
+    private Task LoadDataAsync() => LoadAsync(async () => items = await Store.MovementsAsync(search, typeId, null, null));
+
+    private async Task OnSearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await LoadDataAsync();
+    }
+}

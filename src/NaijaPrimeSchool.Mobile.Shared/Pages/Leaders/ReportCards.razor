@@ -1,0 +1,70 @@
+@page "/report-cards"
+@attribute [Authorize(Roles = RoleGroups.SchoolLeaders)]
+@inject ResultsClient Results
+
+<PageHeader Title="Report cards" Subtitle="Review and publish to families" />
+
+<ClassTermPicker @bind-ClassId="classId" @bind-TermId="termId" CurrentUserId="CurrentUserId" OnChanged="LoadDataAsync" />
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (cards.Count == 0)
+    {
+        <EmptyState Icon="description" Title="No report cards" Message="Generate report cards for this class on the web portal first." />
+    }
+    else
+    {
+        <div class="nps-register-tools">
+            <span class="nps-muted">@cards.Count(c => c.IsPublished) of @cards.Count published</span>
+            @if (cards.Any(c => !c.IsPublished))
+            {
+                <RadzenButton Text="Publish all" Icon="publish" Size="ButtonSize.ExtraSmall" IsBusy="Busy" Click="PublishAllAsync" />
+            }
+        </div>
+        <div class="nps-list">
+            @foreach (var c in cards.OrderBy(c => c.Position ?? int.MaxValue))
+            {
+                <ListRow Href="@($"portal/report-cards/{c.Id}")" Title="@c.StudentName"
+                         Subtitle="@($"{Format.Percent(c.AveragePercentage)} · position {c.Position?.ToString() ?? "—"} of {c.StudentsInClass}")">
+                    <Leading><StudentAvatar PhotoUrl="@c.StudentPhotoUrl" FirstName="@c.StudentFirstName" LastName="@c.StudentLastName" Size="medium" /></Leading>
+                    <Trailing>
+                        <StatusBadge Code="@(c.IsPublished ? "PUBLISHED" : "DRAFT")" Text="@(c.IsPublished ? "Published" : "Draft")" />
+                    </Trailing>
+                </ListRow>
+            }
+        </div>
+    }
+</PageState>
+
+@code {
+    private Guid? classId;
+    private Guid? termId;
+    private List<ReportCardDto> cards = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        Loading = false;
+    }
+
+    private Task LoadDataAsync() => LoadAsync(async () =>
+        cards = classId is null ? [] : await Results.ReportCardsAsync(termId, classId));
+
+    private async Task PublishAllAsync()
+    {
+        var drafts = cards.Where(c => !c.IsPublished).ToList();
+        if (!await ConfirmAsync($"Publish {drafts.Count} report card(s)? Parents and students will be able to see them.", "Publish", "Publish"))
+            return;
+
+        Busy = true;
+        var failures = new List<string>();
+        foreach (var c in drafts)
+        {
+            var r = await Results.PublishReportCardAsync(c.Id, true);
+            if (!r.Succeeded) failures.Add($"{c.StudentName}: {r.ErrorText}");
+        }
+        Busy = false;
+        if (failures.Count == 0) Success("Report cards published.");
+        else Error(string.Join(" ", failures));
+        await LoadDataAsync();
+    }
+}

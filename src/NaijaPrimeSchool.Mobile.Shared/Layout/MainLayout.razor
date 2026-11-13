@@ -1,0 +1,151 @@
+﻿@inherits LayoutComponentBase
+@implements IDisposable
+@inject AppState App
+@inject NavigationManager Nav
+
+<RadzenComponents />
+
+<AuthorizeView>
+    <Authorized>
+        <RadzenLayout class="nps-shell">
+            <RadzenHeader>
+                <div class="nps-header">
+                    <RadzenSidebarToggle Click="ToggleSidebar" aria-label="Menu" />
+                    <a class="nps-brand" href="">
+                        <span class="nps-brand-badge">NPS</span>
+                        <span class="nps-brand-text">
+                            <strong>@App.Config.SchoolName</strong>
+                            <small>@HeaderRole(context.User)</small>
+                        </span>
+                    </a>
+                    <span class="nps-spacer"></span>
+                    @if (IsIn(context.User, RoleGroups.PortalViewers))
+                    {
+                        <a class="nps-header-icon" href="announcements" title="Announcements">
+                            <span class="rzi">notifications</span>
+                            @if (App.UnreadAnnouncements > 0)
+                            {
+                                <span class="nps-dot">@Badge(App.UnreadAnnouncements)</span>
+                            }
+                        </a>
+                    }
+                    @if (IsIn(context.User, RoleGroups.Messaging))
+                    {
+                        <a class="nps-header-icon" href="messages" title="Messages">
+                            <span class="rzi">forum</span>
+                            @if (App.UnreadMessages > 0)
+                            {
+                                <span class="nps-dot">@Badge(App.UnreadMessages)</span>
+                            }
+                        </a>
+                    }
+                    <a class="nps-header-icon" href="profile" title="My account"><span class="rzi">account_circle</span></a>
+                </div>
+            </RadzenHeader>
+
+            <RadzenSidebar @bind-Expanded="sidebarExpanded" Responsive="true" class="nps-sidebar">
+                <NavMenu />
+            </RadzenSidebar>
+
+            <RadzenBody>
+                <div class="nps-page">
+                    @Body
+                </div>
+            </RadzenBody>
+
+            <RadzenFooter class="nps-bottom-nav">
+                <NavLink href="" Match="NavLinkMatch.All"><span class="rzi">home</span><small>Home</small></NavLink>
+                @if (IsIn(context.User, RoleGroups.PortalViewers))
+                {
+                    <NavLink href="announcements"><span class="rzi">campaign</span><small>Notices</small></NavLink>
+                }
+                else if (IsIn(context.User, RoleGroups.AcademicStaff))
+                {
+                    <NavLink href="attendance/daily"><span class="rzi">fact_check</span><small>Register</small></NavLink>
+                }
+                @if (IsIn(context.User, RoleGroups.Messaging))
+                {
+                    <NavLink href="messages"><span class="rzi">forum</span><small>Messages</small></NavLink>
+                }
+                <NavLink href="profile"><span class="rzi">person</span><small>Me</small></NavLink>
+            </RadzenFooter>
+        </RadzenLayout>
+    </Authorized>
+    <NotAuthorized>
+        @Body
+    </NotAuthorized>
+</AuthorizeView>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private bool sidebarExpanded = true;
+    private bool collapseOnNavigate;
+    private DateTimeOffset lastBadgeRefresh = DateTimeOffset.MinValue;
+
+    protected override async Task OnInitializedAsync()
+    {
+        App.Changed += OnAppChanged;
+        Nav.LocationChanged += OnLocationChanged;
+        await App.EnsureConfigAsync();
+        await RefreshBadgesAsync();
+    }
+
+    private void ToggleSidebar()
+    {
+        sidebarExpanded = !sidebarExpanded;
+        // Opened by hand (phones): close again once the user picks a page.
+        collapseOnNavigate = sidebarExpanded;
+    }
+
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (collapseOnNavigate)
+        {
+            sidebarExpanded = false;
+            collapseOnNavigate = false;
+        }
+        await RefreshBadgesAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RefreshBadgesAsync()
+    {
+        if (DateTimeOffset.UtcNow - lastBadgeRefresh < TimeSpan.FromSeconds(45) || AuthState is null) return;
+        var user = (await AuthState).User;
+        if (user.Identity?.IsAuthenticated != true) return;
+        lastBadgeRefresh = DateTimeOffset.UtcNow;
+        await App.RefreshBadgesAsync(IsIn(user, RoleGroups.PortalViewers), IsIn(user, RoleGroups.Messaging));
+    }
+
+    private void OnAppChanged() => InvokeAsync(StateHasChanged);
+
+    private static bool IsIn(ClaimsPrincipal user, string group) => RoleGroups.Split(group).Any(user.IsInRole);
+
+    private static string Badge(int n) => n > 9 ? "9+" : n.ToString();
+
+    private static string HeaderRole(ClaimsPrincipal user) =>
+        Roles.All.FirstOrDefault(user.IsInRole) switch
+        {
+            Roles.SuperAdmin => "Super admin",
+            Roles.HeadTeacher => "Head teacher",
+            Roles.Teacher => "Teacher",
+            Roles.SchoolBursar => "Bursar",
+            Roles.SchoolStoreKeeper => "Store keeper",
+            Roles.Parent => "Parent portal",
+            Roles.Student => "Student portal",
+            _ => "School app",
+        };
+
+    public void Dispose()
+    {
+        App.Changed -= OnAppChanged;
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+}

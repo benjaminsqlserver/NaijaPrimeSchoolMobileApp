@@ -1,0 +1,97 @@
+@page "/profile"
+@inject SessionManager Sessions
+@inject AccountClient Account
+@inject ApiSettings Api
+@inject IPlatformService Platform
+@inject LookupClient Lookups
+
+<PageHeader Title="My account" Subtitle="Your sign-in details and password" />
+
+@if (Sessions.CurrentUser is { } me)
+{
+    <div class="nps-card nps-profile">
+        <span class="nps-avatar nps-avatar-large nps-avatar-initials" style="background:var(--nps-green-700)">
+            @Format.Initials(me.FullName.Split(' ').FirstOrDefault(), me.FullName.Split(' ').LastOrDefault())
+        </span>
+        <div>
+            <h2>@me.FullName</h2>
+            <p class="nps-muted">@me.UserName · @me.Email</p>
+            <div class="nps-chips">
+                @foreach (var role in me.Roles)
+                {
+                    <RadzenBadge BadgeStyle="BadgeStyle.Primary" Shade="Shade.Lighter" IsPill="true" Text="@role" />
+                }
+            </div>
+        </div>
+    </div>
+}
+
+<div class="nps-card">
+    <h3>Change password</h3>
+    <p class="nps-muted">Your password is shared with the web portal. Changing it signs you out on every other device.</p>
+    <EditForm Model="password" OnValidSubmit="ChangePasswordAsync" class="nps-form">
+        <DataAnnotationsValidator />
+        <div class="nps-field">
+            <label>Current password</label>
+            <RadzenPassword @bind-Value="password.CurrentPassword" autocomplete="current-password" Style="width:100%" />
+            <ValidationMessage For="() => password.CurrentPassword" />
+        </div>
+        <div class="nps-field">
+            <label>New password</label>
+            <RadzenPassword @bind-Value="password.NewPassword" autocomplete="new-password" Style="width:100%" />
+            <ValidationMessage For="() => password.NewPassword" />
+            <small class="nps-muted">At least 8 characters with upper- and lower-case letters, a digit and a symbol.</small>
+        </div>
+        <div class="nps-field">
+            <label>Confirm new password</label>
+            <RadzenPassword @bind-Value="password.ConfirmPassword" autocomplete="new-password" Style="width:100%" />
+            <ValidationMessage For="() => password.ConfirmPassword" />
+        </div>
+        <RadzenButton ButtonType="ButtonType.Submit" Text="Update password" Icon="key" IsBusy="@Busy" />
+    </EditForm>
+</div>
+
+<div class="nps-card">
+    <h3>This device</h3>
+    <dl class="nps-dl">
+        <dt>Platform</dt><dd>@Platform.PlatformName</dd>
+        <dt>School server</dt><dd>@Api.BaseUrl</dd>
+        @if (!string.IsNullOrEmpty(App.Config.WebPortalUrl))
+        {
+            <dt>Web portal</dt>
+            <dd><a href="" @onclick="OpenPortalAsync" @onclick:preventDefault>@App.Config.WebPortalUrl</a></dd>
+        }
+    </dl>
+    <RadzenButton Text="Sign out" Icon="logout" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Outlined" Click="SignOutAsync" Style="width:100%" />
+</div>
+
+@code {
+    private ChangePasswordRequest password = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await Sessions.GetSessionAsync();
+        Loading = false;
+    }
+
+    private async Task ChangePasswordAsync()
+    {
+        var result = await RunAsync(() => Account.ChangePasswordAsync(password), "Password updated.");
+        if (result is { Succeeded: true, Data: { } tokens })
+        {
+            await Sessions.ApplyAsync(tokens);
+            password = new();
+        }
+    }
+
+    private Task OpenPortalAsync() => Platform.OpenExternalAsync(App.Config.WebPortalUrl!);
+
+    private async Task SignOutAsync()
+    {
+        if (!await ConfirmAsync("Sign out of Naija Prime School on this device?", "Sign out", "Sign out")) return;
+        await Sessions.SignOutAsync();
+        Lookups.Clear();
+        Nav.NavigateTo("login", replace: true);
+    }
+}

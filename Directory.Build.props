@@ -1,0 +1,12 @@
+<Project>
+  <!--
+    The mobile solution shares its Domain, Application and Infrastructure
+    layers with the web app (same entities, same EF Core model, same SQL Server
+    database, same Identity store, same soft-delete + audit rules). Point this
+    at the web app's src folder if the two repositories are not siblings.
+  -->
+  <PropertyGroup>
+    <NaijaPrimeSchoolWebSrc Condition="'$(NaijaPrimeSchoolWebSrc)' == ''">$(MSBuildThisFileDirectory)..\NaijaPrimeSchoolWeb\src\</NaijaPrimeSchoolWebSrc>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+</Project>

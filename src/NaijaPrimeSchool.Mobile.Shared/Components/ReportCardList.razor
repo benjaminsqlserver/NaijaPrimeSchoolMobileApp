@@ -1,0 +1,25 @@
+@if (Cards.Count == 0)
+{
+    <EmptyState Icon="description" Title="No report cards yet" Message="Report cards appear here once the school publishes them." />
+}
+<div class="nps-list">
+    @foreach (var c in Cards.OrderByDescending(c => c.PublishedOn ?? DateTimeOffset.MinValue))
+    {
+        <ListRow Href="@($"portal/report-cards/{c.Id}")" Title="@($"{c.TermName} · {c.SessionName}")"
+                 Subtitle="@($"{c.SchoolClassName} · {c.SubjectsTaken} subjects")">
+            <Trailing>
+                <div class="nps-right">
+                    <strong>@Format.Percent(c.AveragePercentage)</strong>
+                    @if (c.Position is not null)
+                    {
+                        <small class="nps-muted">Position @c.Position / @c.StudentsInClass</small>
+                    }
+                </div>
+            </Trailing>
+        </ListRow>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<ReportCardDto> Cards { get; set; } = [];
+}

@@ -1,0 +1,69 @@
+@page "/manage/announcements"
+@attribute [Authorize(Roles = RoleGroups.SchoolLeaders)]
+@inject CommsClient Comms
+
+<PageHeader Title="Manage announcements" Subtitle="Draft, publish and retire school notices">
+    <Actions>
+        <RadzenButton Text="New" Icon="add" Size="ButtonSize.Small" Click="@(() => Nav.NavigateTo("manage/announcements/new"))" />
+    </Actions>
+</PageHeader>
+
+<div class="nps-filters">
+    <RadzenTextBox @bind-Value="search" Placeholder="Search" Style="flex:1;min-width:0" @onkeydown="OnSearchKey" />
+    <RadzenSelectBar @bind-Value="status" TValue="string" Size="ButtonSize.Small" Change="@(_ => LoadDataAsync())">
+        <Items>
+            <RadzenSelectBarItem Text="All" Value="@("all")" />
+            <RadzenSelectBarItem Text="Live" Value="@("published")" />
+            <RadzenSelectBarItem Text="Drafts" Value="@("draft")" />
+        </Items>
+    </RadzenSelectBar>
+</div>
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (items.Count == 0)
+    {
+        <EmptyState Icon="campaign" Title="No announcements" />
+    }
+    <div class="nps-list">
+        @foreach (var a in items)
+        {
+            <ListRow Href="@($"manage/announcements/{a.Id}")" Title="@a.Title"
+                     Subtitle="@($"{a.CategoryName} · {a.AudienceName}{(a.TargetSchoolClassName is null ? "" : $" ({a.TargetSchoolClassName})")} · {a.ReadCount} read")">
+                <Leading><span class="rzi nps-row-icon">@(a.IsPinned ? "push_pin" : "campaign")</span></Leading>
+                <Trailing>
+                    <div class="nps-right">
+                        @if (a.IsPublished)
+                        {
+                            <StatusBadge Code="@(a.IsExpired ? "CLOSED" : "PUBLISHED")" Text="@(a.IsExpired ? "Expired" : "Live")" />
+                        }
+                        else
+                        {
+                            <StatusBadge Code="DRAFT" Text="Draft" />
+                        }
+                        <small class="nps-muted">@Format.Date(a.PublishedOn ?? a.CreatedOn)</small>
+                    </div>
+                </Trailing>
+            </ListRow>
+        }
+    </div>
+</PageState>
+
+@code {
+    private List<AnnouncementDto> items = [];
+    private string? search;
+    private string status = "all";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await LoadDataAsync();
+    }
+
+    private Task LoadDataAsync() => LoadAsync(async () =>
+        items = await Comms.AnnouncementsAsync(search, status switch { "published" => true, "draft" => false, _ => null }));
+
+    private async Task OnSearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await LoadDataAsync();
+    }
+}

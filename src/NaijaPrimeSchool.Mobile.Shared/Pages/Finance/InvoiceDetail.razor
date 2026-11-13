@@ -1,0 +1,71 @@
+@page "/finance/invoices/{Id:guid}"
+@attribute [Authorize(Roles = RoleGroups.Finance)]
+@inject FinanceClient Finance
+
+<PageHeader Title="@(detail?.Invoice.InvoiceNumber ?? "Invoice")" Subtitle="@detail?.Invoice.StudentName" BackHref="finance/invoices">
+    <Actions>
+        @if (detail is { Invoice.Balance: > 0 })
+        {
+            <RadzenButton Text="Take payment" Icon="add_card" Size="ButtonSize.Small"
+                          Click="@(() => Nav.NavigateTo($"finance/payments/new?studentId={detail.Invoice.StudentId}"))" />
+        }
+    </Actions>
+</PageHeader>
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (detail is null)
+    {
+        <EmptyState Icon="request_quote" Title="Invoice not found" />
+    }
+    else
+    {
+        var inv = detail.Invoice;
+        <div class="nps-card nps-profile">
+            <StudentAvatar PhotoUrl="@inv.StudentPhotoUrl" FirstName="@inv.StudentFirstName" LastName="@inv.StudentLastName" Size="large" />
+            <div>
+                <h2>@inv.StudentName</h2>
+                <p class="nps-muted">@inv.StudentAdmissionNumber · @inv.SchoolClassName · @inv.TermName @inv.SessionName</p>
+                <StatusBadge Code="@inv.InvoiceStatusCode" Text="@inv.InvoiceStatusName" />
+            </div>
+        </div>
+
+        <div class="nps-stats">
+            <StatTile Icon="request_quote" Label="Amount due" Value="@Format.Money(inv.AmountDue)" Tone="blue" Hint="@($"Discount {Format.Money(inv.DiscountTotal)}")" />
+            <StatTile Icon="savings" Label="Paid" Value="@Format.Money(inv.AmountPaid)" />
+            <StatTile Icon="warning" Label="Balance" Value="@Format.Money(inv.Balance)" Tone="@(inv.Balance > 0 ? "red" : "green")" Hint="@($"Due {Format.Date(inv.DueDate)}")" />
+        </div>
+
+        <h3 class="nps-section-title">Lines</h3>
+        <div class="nps-list">
+            @foreach (var l in detail.Lines)
+            {
+                <ListRow Title="@l.Description" Subtitle="@(l.Discount > 0 ? $"{l.FeeCategoryName} · discount {Format.Money(l.Discount)}" : l.FeeCategoryName)">
+                    <Trailing><span class="nps-amount">@Format.Money(l.LineTotal)</span></Trailing>
+                </ListRow>
+            }
+        </div>
+
+        <h3 class="nps-section-title">Payments applied</h3>
+        @if (detail.Payments.Count == 0)
+        {
+            <EmptyState Icon="savings" Title="No payments yet" />
+        }
+        <div class="nps-list">
+            @foreach (var p in detail.Payments)
+            {
+                <ListRow Href="@($"finance/payments/{p.PaymentId}")" Title="@p.ReceiptNumber" Subtitle="@($"{Format.Date(p.PaidOn)} · {p.PaymentMethodName}{(p.Reference is null ? "" : " · " + p.Reference)}")">
+                    <Trailing><span class="nps-amount">@Format.Money(p.AmountApplied)</span></Trailing>
+                </ListRow>
+            }
+        </div>
+    }
+</PageState>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private InvoiceDetailDto? detail;
+
+    protected override Task OnParametersSetAsync() => LoadDataAsync();
+
+    private Task LoadDataAsync() => LoadAsync(async () => detail = await Finance.InvoiceAsync(Id));
+}

@@ -1,0 +1,80 @@
+@page "/students"
+@attribute [Authorize(Roles = RoleGroups.SchoolLeaders)]
+@inject FamilyClient Family
+
+<PageHeader Title="Students" Subtitle="@($"{total} pupils")" />
+
+<div class="nps-filters">
+    <RadzenTextBox @bind-Value="search" Placeholder="Name or admission number" Style="flex:1;min-width:0" @onkeydown="OnSearchKey" />
+    <RadzenSelectBar @bind-Value="active" TValue="bool?" Size="ButtonSize.Small" Change="@(_ => ReloadAsync())">
+        <Items>
+            <RadzenSelectBarItem Text="Active" Value="@((bool?)true)" />
+            <RadzenSelectBarItem Text="All" Value="@((bool?)null)" />
+        </Items>
+    </RadzenSelectBar>
+</div>
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="ReloadAsync">
+    @if (items.Count == 0)
+    {
+        <EmptyState Icon="boy" Title="No students found" />
+    }
+    <div class="nps-list">
+        @foreach (var s in items)
+        {
+            <ListRow Href="@($"students/{s.Id}")" Title="@s.FullName" Subtitle="@($"{s.AdmissionNumber} · {s.CurrentClassName ?? "Not enrolled"}")">
+                <Leading><StudentAvatar PhotoUrl="@s.PhotoUrl" FirstName="@s.FirstName" LastName="@s.LastName" Size="medium" /></Leading>
+                <Trailing>
+                    @if (!s.IsActive)
+                    {
+                        <StatusBadge Code="INACTIVE" Text="Inactive" />
+                    }
+                </Trailing>
+            </ListRow>
+        }
+    </div>
+    @if (items.Count < total)
+    {
+        <RadzenButton Text="Load more" Icon="expand_more" ButtonStyle="ButtonStyle.Light" IsBusy="Busy" Click="MoreAsync" Style="width:100%;margin-top:1rem" />
+    }
+</PageState>
+
+@code {
+    private const int PageSize = 25;
+    private readonly List<StudentDto> items = [];
+    private int total;
+    private string? search;
+    private bool? active = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await ReloadAsync();
+    }
+
+    private Task ReloadAsync() => LoadAsync(async () =>
+    {
+        items.Clear();
+        var page = await Family.StudentsAsync(search, null, active, 0, PageSize);
+        items.AddRange(page.Items);
+        total = page.TotalCount;
+    });
+
+    private async Task MoreAsync()
+    {
+        Busy = true;
+        try
+        {
+            var page = await Family.StudentsAsync(search, null, active, items.Count, PageSize);
+            items.AddRange(page.Items);
+            total = page.TotalCount;
+        }
+        catch (ApiException ex) { Error(ex.Message); }
+        finally { Busy = false; }
+    }
+
+    private async Task OnSearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await ReloadAsync();
+    }
+}

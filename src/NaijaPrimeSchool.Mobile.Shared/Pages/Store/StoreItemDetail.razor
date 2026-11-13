@@ -1,0 +1,60 @@
+@page "/store/items/{Id:guid}"
+@attribute [Authorize(Roles = RoleGroups.Store)]
+@inject StoreClient Store
+
+<PageHeader Title="@(detail?.Item.Name ?? "Item")" Subtitle="@detail?.Item.ItemCategoryName" BackHref="store/items">
+    <Actions>
+        <RadzenButton Text="Record" Icon="post_add" Size="ButtonSize.Small" Click="@(() => Nav.NavigateTo($"store/movements/new?itemId={Id}"))" />
+    </Actions>
+</PageHeader>
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (detail is null)
+    {
+        <EmptyState Icon="inventory_2" Title="Item not found" />
+    }
+    else
+    {
+        var i = detail.Item;
+        <div class="nps-stats">
+            <StatTile Icon="inventory" Label="On hand" Value="@($"{Format.Quantity(i.QuantityOnHand)} {i.UnitOfMeasureCode}")"
+                      Tone="@(i.IsBelowReorder ? "red" : "green")" Hint="@($"Reorder at {Format.Quantity(i.ReorderLevel)}")" />
+            <StatTile Icon="sell" Label="Last unit cost" Value="@Format.Money(i.LastUnitCost)" Tone="blue" />
+            <StatTile Icon="account_balance_wallet" Label="Stock value" Value="@Format.Money(i.StockValue)" Tone="grey" />
+        </div>
+        @if (!string.IsNullOrEmpty(i.Description))
+        {
+            <p class="nps-card">@i.Description</p>
+        }
+
+        <h3 class="nps-section-title">Movement history</h3>
+        @if (detail.Movements.Count == 0)
+        {
+            <EmptyState Icon="swap_vert" Title="No movements yet" />
+        }
+        <div class="nps-list">
+            @foreach (var m in detail.Movements.OrderByDescending(m => m.MovedOn))
+            {
+                <MovementRow Movement="m" OnClick="() => ReverseAsync(m)" />
+            }
+        </div>
+        <small class="nps-muted">Tap a movement to reverse it (soft delete: the entry is kept in the audit trail and its effect on stock is undone).</small>
+    }
+</PageState>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private StoreItemDetailDto? detail;
+
+    protected override Task OnParametersSetAsync() => LoadDataAsync();
+
+    private Task LoadDataAsync() => LoadAsync(async () => detail = await Store.ItemAsync(Id));
+
+    private async Task ReverseAsync(StockMovementDto m)
+    {
+        if (!await ConfirmAsync($"Reverse {m.MovementNumber} ({m.StockMovementTypeName}, {Format.Quantity(m.Quantity)} {m.UnitOfMeasureCode})? Quantity on hand will be adjusted back.", "Reverse movement", "Reverse"))
+            return;
+        if (await RunAsync(() => Store.DeleteMovementAsync(m.Id), "Movement reversed."))
+            await LoadDataAsync();
+    }
+}

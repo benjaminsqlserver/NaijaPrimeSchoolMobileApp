@@ -1,0 +1,56 @@
+@page "/portal/student"
+@attribute [Authorize(Roles = Roles.Student)]
+@inject PortalClient Portal
+
+<PageHeader Title="Today" Subtitle="@(dashboard is null ? null : $"{dashboard.CurrentSchoolClassName} · {dashboard.CurrentTermName} {dashboard.CurrentSessionName}")">
+    <Actions>
+        @if (dashboard is not null)
+        {
+            <RadzenButton Text="My profile" Icon="person" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small"
+                          Click="@(() => Nav.NavigateTo($"portal/students/{dashboard.StudentId}"))" />
+        }
+    </Actions>
+</PageHeader>
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (dashboard is null)
+    {
+        <EmptyState Icon="school" Title="No student record linked to this account" Message="Please contact the school office." />
+    }
+    else
+    {
+        <div class="nps-stats">
+            <StatTile Icon="event_available" Label="Attendance" Value="@Format.Percent(dashboard.LatestAttendancePercentage)"
+                      Hint="@($"{dashboard.DaysPresent} of {dashboard.DaysCounted} days")" />
+            <StatTile Icon="schedule" Label="Late" Value="@dashboard.DaysLate.ToString()" Tone="amber" />
+            <StatTile Icon="event_busy" Label="Absent" Value="@dashboard.DaysAbsent.ToString()" Tone="red" />
+        </div>
+
+        <h2 class="nps-section-title">Lessons today</h2>
+        @if (dashboard.TodayLessons.Count == 0)
+        {
+            <EmptyState Icon="weekend" Title="No lessons today" />
+        }
+        <div class="nps-list">
+            @foreach (var l in dashboard.TodayLessons)
+            {
+                <ListRow Title="@l.SubjectName" Subtitle="@($"{l.PeriodName} · {Format.Time(l.StartsAt)}–{Format.Time(l.EndsAt)}{(string.IsNullOrEmpty(l.Room) ? "" : " · " + l.Room)}")">
+                    <Leading><span class="nps-code">@l.SubjectCode</span></Leading>
+                    <Trailing><small class="nps-muted">@l.TeacherName</small></Trailing>
+                </ListRow>
+            }
+        </div>
+    }
+</PageState>
+
+@code {
+    private StudentDashboardDto? dashboard;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await LoadDataAsync();
+    }
+
+    private Task LoadDataAsync() => LoadAsync(async () => dashboard = await Portal.StudentAsync());
+}

@@ -1,0 +1,70 @@
+@page "/parents"
+@attribute [Authorize(Roles = RoleGroups.SchoolLeaders)]
+@inject FamilyClient Family
+
+<PageHeader Title="Parents & guardians" Subtitle="@($"{total} people")" />
+
+<div class="nps-filters">
+    <RadzenTextBox @bind-Value="search" Placeholder="Name, phone or email" Style="flex:1;min-width:0" @onkeydown="OnSearchKey" />
+</div>
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="ReloadAsync">
+    @if (items.Count == 0)
+    {
+        <EmptyState Icon="people_outline" Title="No parents found" />
+    }
+    <div class="nps-list">
+        @foreach (var p in items)
+        {
+            <ListRow Href="@($"parents/{p.Id}")" Title="@p.FullName" Subtitle="@($"{p.PrimaryPhone ?? p.Email ?? "No contact"} · {p.StudentCount} ward(s)")">
+                <Leading><span class="nps-avatar nps-avatar-medium nps-avatar-initials" style="background:var(--nps-green-700)">@Format.Initials(p.FirstName, p.LastName)</span></Leading>
+                <Trailing>
+                    @if (!p.IsActive) { <StatusBadge Code="INACTIVE" Text="Inactive" /> }
+                </Trailing>
+            </ListRow>
+        }
+    </div>
+    @if (items.Count < total)
+    {
+        <RadzenButton Text="Load more" Icon="expand_more" ButtonStyle="ButtonStyle.Light" IsBusy="Busy" Click="MoreAsync" Style="width:100%;margin-top:1rem" />
+    }
+</PageState>
+
+@code {
+    private const int PageSize = 25;
+    private readonly List<ParentDto> items = [];
+    private int total;
+    private string? search;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await ReloadAsync();
+    }
+
+    private Task ReloadAsync() => LoadAsync(async () =>
+    {
+        items.Clear();
+        var page = await Family.ParentsAsync(search, null, 0, PageSize);
+        items.AddRange(page.Items);
+        total = page.TotalCount;
+    });
+
+    private async Task MoreAsync()
+    {
+        Busy = true;
+        try
+        {
+            var page = await Family.ParentsAsync(search, null, items.Count, PageSize);
+            items.AddRange(page.Items);
+            total = page.TotalCount;
+        }
+        catch (ApiException ex) { Error(ex.Message); }
+        finally { Busy = false; }
+    }
+
+    private async Task OnSearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await ReloadAsync();
+    }
+}

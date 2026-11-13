@@ -1,0 +1,156 @@
+@page "/"
+@inject PortalClient Portal
+@inject FinanceClient Finance
+@inject StoreClient Store
+@inject SessionManager Sessions
+
+<div class="nps-hello">
+    <h1>@Greeting, @FirstName</h1>
+    <p>@DateTime.Now.ToString("dddd, d MMMM yyyy")</p>
+</div>
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @* ---------- Parent ---------- *@
+    @if (parent is not null)
+    {
+        <h2 class="nps-section-title">My wards</h2>
+        @if (parent.Wards.Count == 0)
+        {
+            <EmptyState Icon="family_restroom" Title="No wards linked yet" Message="Ask the school office to link your children to your account." />
+        }
+        <div class="nps-list">
+            @foreach (var w in parent.Wards)
+            {
+                <ListRow Href="@($"portal/students/{w.StudentId}")" Title="@w.FullName"
+                         Subtitle="@($"{w.CurrentSchoolClassName ?? "Not enrolled"} · {w.Relationship}")">
+                    <Leading><StudentAvatar PhotoUrl="@w.PhotoUrl" FirstName="@w.FirstName" LastName="@w.LastName" Size="medium" /></Leading>
+                    <Trailing>
+                        @if (w.OutstandingBalance > 0)
+                        {
+                            <span class="nps-amount nps-danger">@Format.Money(w.OutstandingBalance)</span>
+                        }
+                        else
+                        {
+                            <StatusBadge Code="PAID" Text="Fees clear" />
+                        }
+                    </Trailing>
+                </ListRow>
+            }
+        </div>
+    }
+
+    @* ---------- Student ---------- *@
+    @if (student is not null)
+    {
+        <div class="nps-stats">
+            <StatTile Icon="event_available" Label="Attendance" Value="@Format.Percent(student.LatestAttendancePercentage)" Href="portal/student" />
+            <StatTile Icon="payments" Label="Fees outstanding" Value="@Format.Money(student.OutstandingBalance)"
+                      Tone="@(student.OutstandingBalance > 0 ? "red" : "green")" Href="portal/student/fees" />
+            <StatTile Icon="description" Label="Report cards" Value="@student.PublishedReportCardCount.ToString()" Tone="blue" Href="portal/student/results" />
+        </div>
+        <h2 class="nps-section-title">Today's lessons</h2>
+        @if (student.TodayLessons.Count == 0)
+        {
+            <EmptyState Icon="weekend" Title="No lessons today" />
+        }
+        <div class="nps-list">
+            @foreach (var l in student.TodayLessons)
+            {
+                <ListRow Title="@l.SubjectName" Subtitle="@($"{l.PeriodName} · {Format.Time(l.StartsAt)}–{Format.Time(l.EndsAt)}{(string.IsNullOrEmpty(l.Room) ? "" : " · " + l.Room)}")">
+                    <Leading><span class="nps-code">@l.SubjectCode</span></Leading>
+                    <Trailing><small class="nps-muted">@l.TeacherName</small></Trailing>
+                </ListRow>
+            }
+        </div>
+    }
+
+    @* ---------- Staff shortcuts ---------- *@
+    @if (IsInAnyRole(RoleGroups.AcademicStaff))
+    {
+        <h2 class="nps-section-title">Teaching</h2>
+        <div class="nps-tiles">
+            <a class="nps-tile" href="attendance/daily"><span class="rzi">fact_check</span>Daily register</a>
+            <a class="nps-tile" href="attendance/subject"><span class="rzi">schedule</span>Lesson register</a>
+            <a class="nps-tile" href="assessments"><span class="rzi">grading</span>Score sheets</a>
+            <a class="nps-tile" href="timetable"><span class="rzi">grid_on</span>Timetable</a>
+        </div>
+    }
+
+    @if (IsInAnyRole(RoleGroups.SchoolLeaders))
+    {
+        <h2 class="nps-section-title">School office</h2>
+        <div class="nps-tiles">
+            <a class="nps-tile" href="students"><span class="rzi">boy</span>Students</a>
+            <a class="nps-tile" href="parents"><span class="rzi">people_outline</span>Parents</a>
+            <a class="nps-tile" href="report-cards"><span class="rzi">description</span>Report cards</a>
+            <a class="nps-tile" href="manage/announcements/new"><span class="rzi">campaign</span>New notice</a>
+        </div>
+    }
+
+    @if (finance is not null)
+    {
+        <h2 class="nps-section-title">Finance @(finance.TermName is null ? "" : $"· {finance.TermName}")</h2>
+        <div class="nps-stats">
+            <StatTile Icon="request_quote" Label="Invoiced" Value="@Format.Money(finance.TotalInvoiced)" Tone="blue" Href="finance/invoices" />
+            <StatTile Icon="savings" Label="Collected" Value="@Format.Money(finance.TotalCollected)" Href="finance/payments" />
+            <StatTile Icon="warning" Label="Outstanding" Value="@Format.Money(finance.TotalOutstanding)" Tone="amber" Href="finance" />
+        </div>
+        <div class="nps-tiles">
+            <a class="nps-tile" href="finance/payments/new"><span class="rzi">add_card</span>Record payment</a>
+            <a class="nps-tile" href="finance/online-payments"><span class="rzi">credit_card</span>Online payments</a>
+        </div>
+    }
+
+    @if (store is not null)
+    {
+        <h2 class="nps-section-title">Store</h2>
+        <div class="nps-stats">
+            <StatTile Icon="inventory_2" Label="Active items" Value="@store.ActiveItems.ToString()" Tone="blue" Href="store/items" />
+            <StatTile Icon="production_quantity_limits" Label="Below reorder" Value="@store.ItemsBelowReorder.ToString()"
+                      Tone="@(store.ItemsBelowReorder > 0 ? "red" : "green")" Href="store/items?low=true" />
+            <StatTile Icon="account_balance_wallet" Label="Stock value" Value="@Format.Money(store.StockValue)" Href="store" />
+        </div>
+        <div class="nps-tiles">
+            <a class="nps-tile" href="store/movements/new"><span class="rzi">post_add</span>Record movement</a>
+        </div>
+    }
+
+    @if (IsInAnyRole(RoleGroups.UserAdmins))
+    {
+        <h2 class="nps-section-title">Administration</h2>
+        <div class="nps-tiles">
+            <a class="nps-tile" href="users"><span class="rzi">manage_accounts</span>Users</a>
+        </div>
+    }
+</PageState>
+
+@code {
+    private ParentDashboardDto? parent;
+    private StudentDashboardDto? student;
+    private FinanceSummaryDto? finance;
+    private StoreSummaryDto? store;
+
+    private string FirstName => (Sessions.CurrentUser?.FullName ?? CurrentUser.Identity?.Name ?? "").Split(' ').FirstOrDefault() ?? "";
+
+    private static string Greeting => DateTime.Now.Hour switch
+    {
+        < 12 => "Good morning",
+        < 17 => "Good afternoon",
+        _ => "Good evening",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await LoadDataAsync();
+    }
+
+    private Task LoadDataAsync() => LoadAsync(async () =>
+    {
+        await Sessions.GetSessionAsync();
+        if (CurrentUser.IsInRole(Roles.Parent)) parent = await Portal.ParentAsync();
+        if (CurrentUser.IsInRole(Roles.Student)) student = await Portal.StudentAsync();
+        if (IsInAnyRole(RoleGroups.Finance)) finance = await Finance.SummaryAsync(null);
+        if (IsInAnyRole(RoleGroups.Store)) store = await Store.SummaryAsync();
+    });
+}

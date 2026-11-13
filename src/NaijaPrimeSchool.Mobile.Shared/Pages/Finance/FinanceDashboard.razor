@@ -1,0 +1,94 @@
+@page "/finance"
+@attribute [Authorize(Roles = RoleGroups.Finance)]
+@inject FinanceClient Finance
+@inject AcademicClient Academic
+
+<PageHeader Title="Bursar dashboard" Subtitle="@(summary?.TermName ?? "All terms")">
+    <Actions>
+        <RadzenButton Text="Record payment" Icon="add_card" Size="ButtonSize.Small" Click="@(() => Nav.NavigateTo("finance/payments/new"))" />
+    </Actions>
+</PageHeader>
+
+<div class="nps-filters">
+    <RadzenDropDown TValue="Guid?" @bind-Value="termId" Data="terms" TextProperty="Label" ValueProperty="Id" AllowClear="true"
+                    Placeholder="All terms" Change="@(_ => LoadDataAsync())" Style="flex:1" />
+</div>
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (summary is not null)
+    {
+        var rate = summary.TotalInvoiced == 0 ? 0 : summary.TotalCollected * 100 / summary.TotalInvoiced;
+        <div class="nps-stats">
+            <StatTile Icon="request_quote" Label="Invoiced" Value="@Format.Money(summary.TotalInvoiced)" Hint="@($"{summary.InvoiceCount} invoices")" Tone="blue" Href="finance/invoices" />
+            <StatTile Icon="savings" Label="Collected" Value="@Format.Money(summary.TotalCollected)" Hint="@($"{summary.PaymentCount} payments")" Href="finance/payments" />
+            <StatTile Icon="warning" Label="Outstanding" Value="@Format.Money(summary.TotalOutstanding)" Hint="@($"{Format.Percent(rate)} collected")" Tone="amber" />
+        </div>
+
+        <div class="nps-card">
+            <h3>Invoices by status</h3>
+            <div class="nps-bars">
+                @Bar("Paid", summary.PaidInvoiceCount, summary.InvoiceCount, "good")
+                @Bar("Partially paid", summary.PartiallyPaidInvoiceCount, summary.InvoiceCount, "warn")
+                @Bar("Unpaid", summary.UnpaidInvoiceCount, summary.InvoiceCount, "bad")
+            </div>
+        </div>
+
+        @if (summary.ByMethod.Count > 0)
+        {
+            <h3 class="nps-section-title">Collections by method</h3>
+            <div class="nps-list">
+                @foreach (var m in summary.ByMethod.OrderByDescending(m => m.TotalAmount))
+                {
+                    <ListRow Title="@m.PaymentMethodName" Subtitle="@($"{m.PaymentCount} payments")">
+                        <Trailing><span class="nps-amount">@Format.Money(m.TotalAmount)</span></Trailing>
+                    </ListRow>
+                }
+            </div>
+        }
+
+        @if (summary.ByCategory.Count > 0)
+        {
+            <h3 class="nps-section-title">Invoiced by fee category</h3>
+            <div class="nps-list">
+                @foreach (var c in summary.ByCategory.OrderByDescending(c => c.TotalInvoiced))
+                {
+                    <ListRow Title="@c.FeeCategoryName">
+                        <Trailing><span class="nps-amount">@Format.Money(c.TotalInvoiced)</span></Trailing>
+                    </ListRow>
+                }
+            </div>
+        }
+    }
+</PageState>
+
+@code {
+    private sealed record TermOption(Guid Id, string Label);
+
+    private Guid? termId;
+    private List<TermOption> terms = [];
+    private FinanceSummaryDto? summary;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await LoadAsync(async () =>
+        {
+            var all = await Academic.TermsAsync();
+            terms = all.OrderByDescending(t => t.StartDate).Select(t => new TermOption(t.Id, $"{t.TermTypeName} · {t.SessionName}")).ToList();
+            termId = all.FirstOrDefault(t => t.IsCurrent)?.Id;
+            summary = await Finance.SummaryAsync(termId);
+        });
+    }
+
+    private Task LoadDataAsync() => LoadAsync(async () => summary = await Finance.SummaryAsync(termId));
+
+    private static RenderFragment Bar(string label, int value, int total, string tone) => __builder =>
+    {
+        var pct = total == 0 ? 0 : value * 100.0 / total;
+        <div class="nps-bar">
+            <span>@label</span>
+            <div class="nps-bar-track"><div class="nps-bar-fill @tone" style="width:@(pct.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture))%"></div></div>
+            <strong>@value</strong>
+        </div>
+    };
+}

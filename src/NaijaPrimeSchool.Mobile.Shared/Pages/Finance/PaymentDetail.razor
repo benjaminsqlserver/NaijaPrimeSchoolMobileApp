@@ -1,0 +1,63 @@
+@page "/finance/payments/{Id:guid}"
+@attribute [Authorize(Roles = RoleGroups.Finance)]
+@inject FinanceClient Finance
+
+<PageHeader Title="@(detail?.Payment.ReceiptNumber ?? "Receipt")" Subtitle="@detail?.Payment.StudentName" BackHref="finance/payments">
+    <Actions>
+        @if (detail is not null && detail.Payment.PaymentStatusCode != "REFUNDED")
+        {
+            <RadzenButton Text="Refund" Icon="undo" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Outlined" Size="ButtonSize.Small" IsBusy="Busy" Click="RefundAsync" />
+        }
+    </Actions>
+</PageHeader>
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (detail is null)
+    {
+        <EmptyState Icon="receipt_long" Title="Payment not found" />
+    }
+    else
+    {
+        var p = detail.Payment;
+        <div class="nps-card nps-receipt">
+            <div class="nps-receipt-amount">@Format.Money(p.Amount)</div>
+            <StatusBadge Code="@p.PaymentStatusCode" Text="@p.PaymentStatusName" />
+            <dl class="nps-dl">
+                <dt>Pupil</dt><dd>@p.StudentName (@p.StudentAdmissionNumber)</dd>
+                <dt>Paid on</dt><dd>@Format.Date(p.PaidOn)</dd>
+                <dt>Method</dt><dd>@p.PaymentMethodName</dd>
+                <dt>Reference</dt><dd>@(p.Reference ?? "—")</dd>
+                <dt>Collected by</dt><dd>@(p.CollectedByName ?? "—")</dd>
+                <dt>Notes</dt><dd>@(p.Notes ?? "—")</dd>
+                <dt>Unallocated</dt><dd>@Format.Money(p.AmountUnallocated)</dd>
+            </dl>
+        </div>
+
+        <h3 class="nps-section-title">Applied to</h3>
+        <div class="nps-list">
+            @foreach (var a in detail.Allocations)
+            {
+                <ListRow Href="@($"finance/invoices/{a.InvoiceId}")" Title="@a.InvoiceNumber" Subtitle="@($"Balance after: {Format.Money(a.InvoiceBalanceAfter)}")">
+                    <Trailing><span class="nps-amount">@Format.Money(a.AmountApplied)</span></Trailing>
+                </ListRow>
+            }
+        </div>
+    }
+</PageState>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private PaymentDetailDto? detail;
+
+    protected override Task OnParametersSetAsync() => LoadDataAsync();
+
+    private Task LoadDataAsync() => LoadAsync(async () => detail = await Finance.PaymentAsync(Id));
+
+    private async Task RefundAsync()
+    {
+        if (!await ConfirmAsync("Refund this payment? Its allocations are reversed and the invoices re-open.", "Refund payment", "Refund"))
+            return;
+        if (await RunAsync(() => Finance.RefundAsync(Id), "Payment refunded."))
+            await LoadDataAsync();
+    }
+}

@@ -1,0 +1,30 @@
+@* One stock movement: direction comes from the movement-type row
+   (+1 inbound / -1 outbound), not from an enum. *@
+<ListRow Title="@($"{(Movement.Direction > 0 ? "+" : "−")}{Format.Quantity(Movement.Quantity)} {Movement.UnitOfMeasureCode} · {Movement.StoreItemName}")"
+         Subtitle="@Subtitle" OnClick="OnClick">
+    <Leading><span class="rzi nps-row-icon @(Movement.Direction > 0 ? "nps-in" : "nps-out")">@(Movement.Direction > 0 ? "south_west" : "north_east")</span></Leading>
+    <Trailing>
+        <div class="nps-right">
+            <small>@Movement.StockMovementTypeName</small>
+            <small class="nps-muted">@Format.Date(Movement.MovedOn)</small>
+        </div>
+    </Trailing>
+</ListRow>
+
+@code {
+    [Parameter, EditorRequired] public StockMovementDto Movement { get; set; } = default!;
+    [Parameter] public EventCallback OnClick { get; set; }
+
+    private string Subtitle
+    {
+        get
+        {
+            var m = Movement;
+            var party = m.ReceivedFromSupplierName
+                        ?? m.IssuedToStudentName
+                        ?? m.IssuedToSchoolClassName
+                        ?? m.IssuedToUserName;
+            return $"{m.MovementNumber}{(party is null ? "" : " · " + party)}{(m.TotalCost > 0 ? " · " + Format.Money(m.TotalCost) : "")}";
+        }
+    }
+}

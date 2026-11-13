@@ -1,0 +1,54 @@
+@page "/finance/invoices"
+@attribute [Authorize(Roles = RoleGroups.Finance)]
+@inject FinanceClient Finance
+@inject LookupClient Lookups
+
+<PageHeader Title="Invoices" Subtitle="@($"{items.Count} shown · balance {Format.Money(items.Sum(i => i.Balance))}")" />
+
+<div class="nps-filters">
+    <RadzenTextBox @bind-Value="search" Placeholder="Invoice no., pupil or admission no." Style="flex:2;min-width:0" @onkeydown="OnSearchKey" />
+    <RadzenDropDown TValue="Guid?" @bind-Value="statusId" Data="statuses" TextProperty="Name" ValueProperty="Id" AllowClear="true"
+                    Placeholder="Any status" Change="@(_ => LoadDataAsync())" Style="flex:1;min-width:7rem" />
+</div>
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (items.Count == 0)
+    {
+        <EmptyState Icon="request_quote" Title="No invoices match" />
+    }
+    <Virtualize Items="items" Context="inv" ItemSize="72">
+        <ListRow Href="@($"finance/invoices/{inv.Id}")" Title="@inv.StudentName" Subtitle="@($"{inv.InvoiceNumber} · {inv.SchoolClassName} · {inv.TermName}")">
+            <Leading><StudentAvatar PhotoUrl="@inv.StudentPhotoUrl" FirstName="@inv.StudentFirstName" LastName="@inv.StudentLastName" /></Leading>
+            <Trailing>
+                <div class="nps-right">
+                    <span class="nps-amount">@Format.Money(inv.Balance)</span>
+                    <StatusBadge Code="@inv.InvoiceStatusCode" Text="@inv.InvoiceStatusName" />
+                </div>
+            </Trailing>
+        </ListRow>
+    </Virtualize>
+</PageState>
+
+@code {
+    private List<InvoiceDto> items = [];
+    private List<LookupDto> statuses = [];
+    private string? search;
+    private Guid? statusId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await LoadAsync(async () =>
+        {
+            statuses = await Lookups.GetAsync(LookupClient.InvoiceStatuses);
+            items = await Finance.InvoicesAsync(search, null, statusId);
+        });
+    }
+
+    private Task LoadDataAsync() => LoadAsync(async () => items = await Finance.InvoicesAsync(search, null, statusId));
+
+    private async Task OnSearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await LoadDataAsync();
+    }
+}

@@ -1,0 +1,33 @@
+@* Shows a spinner while loading, an error card with Retry on failure,
+   otherwise the page content. *@
+@if (Loading)
+{
+    <div class="nps-loading">
+        <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
+    </div>
+}
+else if (!string.IsNullOrEmpty(Error))
+{
+    <div class="nps-card nps-error-card">
+        <span class="rzi">cloud_off</span>
+        <div>
+            <strong>Could not load this screen</strong>
+            <p>@Error</p>
+        </div>
+        @if (OnRetry.HasDelegate)
+        {
+            <RadzenButton Text="Retry" Icon="refresh" ButtonStyle="ButtonStyle.Light" Click="@(() => OnRetry.InvokeAsync())" />
+        }
+    </div>
+}
+else
+{
+    @ChildContent
+}
+
+@code {
+    [Parameter] public bool Loading { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public EventCallback OnRetry { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

@@ -1,0 +1,50 @@
+@page "/assessments"
+@attribute [Authorize(Roles = RoleGroups.AcademicStaff)]
+@inject ResultsClient Results
+
+<PageHeader Title="Score sheets" Subtitle="Enter CA and exam scores" />
+
+<ClassTermPicker @bind-ClassId="classId" @bind-TermId="termId" CurrentUserId="CurrentUserId" OnChanged="LoadDataAsync" />
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (items.Count == 0)
+    {
+        <EmptyState Icon="grading" Title="No assessments set up" Message="Assessments are created on the web portal; they appear here for score entry." />
+    }
+    @foreach (var group in items.GroupBy(a => a.SubjectName).OrderBy(g => g.Key))
+    {
+        <h3 class="nps-section-title">@group.Key</h3>
+        <div class="nps-list">
+            @foreach (var a in group.OrderBy(a => a.AssessmentDate ?? DateOnly.MaxValue))
+            {
+                <ListRow Href="@($"assessments/{a.Id}/scores")" Title="@a.Title"
+                         Subtitle="@($"{a.AssessmentTypeName} · out of {a.MaxScore} · weight {a.Weight:0.##} · {Format.Date(a.AssessmentDate)}")">
+                    <Trailing>
+                        <div class="nps-right">
+                            <span class="@(a.ScoredCount < a.ExpectedCount ? "nps-warn" : null)">@a.ScoredCount / @a.ExpectedCount</span>
+                            @if (a.IsPublished)
+                            {
+                                <StatusBadge Code="PUBLISHED" Text="Published" />
+                            }
+                        </div>
+                    </Trailing>
+                </ListRow>
+            }
+        </div>
+    }
+</PageState>
+
+@code {
+    private Guid? classId;
+    private Guid? termId;
+    private List<TermAssessmentDto> items = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        Loading = false;
+    }
+
+    private Task LoadDataAsync() => LoadAsync(async () =>
+        items = classId is null ? [] : await Results.AssessmentsAsync(termId, classId, null));
+}

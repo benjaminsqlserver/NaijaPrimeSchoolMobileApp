@@ -1,0 +1,89 @@
+@page "/portal/students/{StudentId:guid}"
+@attribute [Authorize(Roles = RoleGroups.PortalViewers)]
+@inject PortalClient Portal
+
+<PageHeader Title="@(detail?.Student.FullName ?? "Pupil")" Subtitle="@detail?.Student.AdmissionNumber" BackHref="@BackHref" />
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (detail is null)
+    {
+        <EmptyState Icon="lock" Title="Not available" Message="This pupil is not linked to your account." />
+    }
+    else
+    {
+        var s = detail.Student;
+        var d = detail.Dashboard;
+        <div class="nps-card nps-profile">
+            <StudentAvatar PhotoUrl="@s.PhotoUrl" FirstName="@s.FirstName" LastName="@s.LastName" Size="large" />
+            <div>
+                <h2>@s.FullName</h2>
+                <p class="nps-muted">@(d?.CurrentSchoolClassName ?? s.CurrentClassName ?? "Not enrolled") · @(d?.CurrentTermName) @(d?.CurrentSessionName)</p>
+            </div>
+        </div>
+
+        <RadzenTabs @bind-SelectedIndex="tab" RenderMode="TabRenderMode.Client">
+            <Tabs>
+                <RadzenTabsItem Text="Overview">
+                    @if (d is not null)
+                    {
+                        <div class="nps-stats">
+                            <StatTile Icon="event_available" Label="Attendance" Value="@Format.Percent(d.LatestAttendancePercentage)"
+                                      Hint="@($"{d.DaysPresent} of {d.DaysCounted} days")" />
+                            <StatTile Icon="schedule" Label="Late" Value="@d.DaysLate.ToString()" Tone="amber" />
+                            <StatTile Icon="event_busy" Label="Absent" Value="@d.DaysAbsent.ToString()" Tone="red" />
+                        </div>
+                        <h3 class="nps-section-title">Today's lessons</h3>
+                        @if (d.TodayLessons.Count == 0)
+                        {
+                            <EmptyState Icon="weekend" Title="No lessons today" />
+                        }
+                        <div class="nps-list">
+                            @foreach (var l in d.TodayLessons)
+                            {
+                                <ListRow Title="@l.SubjectName" Subtitle="@($"{l.PeriodName} · {Format.Time(l.StartsAt)}–{Format.Time(l.EndsAt)}")">
+                                    <Leading><span class="nps-code">@l.SubjectCode</span></Leading>
+                                    <Trailing><small class="nps-muted">@l.TeacherName</small></Trailing>
+                                </ListRow>
+                            }
+                        </div>
+                    }
+                    <h3 class="nps-section-title">Profile</h3>
+                    <dl class="nps-dl nps-card">
+                        <dt>Date of birth</dt><dd>@Format.Date(s.DateOfBirth)</dd>
+                        <dt>Gender</dt><dd>@(s.GenderName ?? "—")</dd>
+                        <dt>Blood group</dt><dd>@(s.BloodGroupName ?? "—")</dd>
+                        <dt>Allergies</dt><dd>@(s.Allergies ?? "None recorded")</dd>
+                        <dt>Primary contact</dt><dd>@(s.PrimaryContactName ?? "—") @s.PrimaryContactPhone</dd>
+                    </dl>
+                </RadzenTabsItem>
+                <RadzenTabsItem Text="Results">
+                    <ReportCardList Cards="detail.ReportCards" />
+                </RadzenTabsItem>
+                <RadzenTabsItem Text="Fees">
+                    <LedgerView Ledger="detail.Ledger" CanPay="detail.CanPayOnline" />
+                </RadzenTabsItem>
+            </Tabs>
+        </RadzenTabs>
+    }
+</PageState>
+
+@code {
+    [Parameter] public Guid StudentId { get; set; }
+    [SupplyParameterFromQuery(Name = "tab")] public int? Tab { get; set; }
+
+    private WardDetailDto? detail;
+    private int tab;
+
+    private string BackHref =>
+        CurrentUser.IsInRole(Roles.Parent) ? "portal/parent"
+        : CurrentUser.IsInRole(Roles.Student) ? ""
+        : $"students/{StudentId}";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        tab = Tab ?? 0;
+        await LoadDataAsync();
+    }
+
+    private Task LoadDataAsync() => LoadAsync(async () => detail = await Portal.WardAsync(StudentId));
+}

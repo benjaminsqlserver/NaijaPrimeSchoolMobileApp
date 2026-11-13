@@ -1,0 +1,202 @@
+@page "/attendance/subject"
+@attribute [Authorize(Roles = RoleGroups.AcademicStaff)]
+@inject AttendanceClient Attendance
+@inject AcademicClient Academic
+@inject LookupClient Lookups
+
+<PageHeader Title="Lesson register" Subtitle="Attendance for one lesson on the timetable" />
+
+<ClassTermPicker @bind-ClassId="classId" @bind-TermId="termId" CurrentUserId="CurrentUserId" OnChanged="LoadLessonsAsync">
+    <RadzenDatePicker TValue="DateOnly" @bind-Value="date" @bind-Value:after="LoadLessonsAsync"
+                      DateFormat="ddd d MMM" Max="DateTime.Today" Style="flex:1;min-width:8rem" />
+</ClassTermPicker>
+
+@if (lessons.Count > 0)
+{
+    <div class="nps-chips nps-lessons">
+        @foreach (var l in lessons)
+        {
+            <button type="button" class="nps-lesson-chip @(l.Id == entryId ? "selected" : null)" @onclick="() => SelectLessonAsync(l.Id)">
+                <strong>@l.SubjectCode</strong>
+                <small>@l.PeriodName · @Format.Time(l.PeriodStart)</small>
+            </button>
+        }
+    </div>
+}
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (lessons.Count == 0)
+    {
+        <EmptyState Icon="event_busy" Title="No lessons on this day" Message="Pick another date, or check the class timetable." />
+    }
+    else if (entryId is null)
+    {
+        <EmptyState Icon="touch_app" Title="Choose a lesson" />
+    }
+    else if (detail is null)
+    {
+        <EmptyState Icon="schedule" Title="No register for this lesson yet">
+            <RadzenButton Text="Open register" Icon="playlist_add_check" IsBusy="Busy" Click="OpenAsync" />
+        </EmptyState>
+    }
+    else
+    {
+        var s = detail.Session;
+        <div class="nps-card nps-register-head">
+            <div>
+                <strong>@s.SubjectName · @s.SchoolClassName</strong>
+                <small class="nps-muted">@s.WeekDayName @Format.Date(s.Date) · @s.PeriodName</small>
+            </div>
+            @if (s.IsSubmitted)
+            {
+                <StatusBadge Code="CONFIRMED" Text="Submitted" />
+            }
+            else
+            {
+                <StatusBadge Code="DRAFT" Text="Not submitted" />
+            }
+        </div>
+
+        <AttendanceMarker Rows="rows" Statuses="statuses" ReadOnly="s.IsSubmitted" OnChanged="() => dirty = true" />
+
+        <div class="nps-sticky-actions">
+            @if (s.IsSubmitted)
+            {
+                <RadzenButton Text="Reopen to edit" Icon="lock_open" ButtonStyle="ButtonStyle.Light" IsBusy="Busy" Click="ReopenAsync" />
+            }
+            else
+            {
+                <RadzenButton Text="Save" Icon="save" ButtonStyle="ButtonStyle.Light" IsBusy="Busy" Disabled="!dirty" Click="() => SaveAsync(true)" />
+                <RadzenButton Text="Submit" Icon="task_alt" IsBusy="Busy" Click="SubmitAsync" />
+            }
+        </div>
+    }
+</PageState>
+
+@code {
+    [SupplyParameterFromQuery(Name = "entry")] public Guid? EntryParam { get; set; }
+
+    private Guid? classId;
+    private Guid? termId;
+    private Guid? entryId;
+    private DateOnly date = DateOnly.FromDateTime(DateTime.Today);
+    private List<TimetableEntryDto> timetable = [];
+    private List<TimetableEntryDto> lessons = [];
+    private SubjectAttendanceSessionDetailDto? detail;
+    private List<AttendanceMarker.MarkRow> rows = [];
+    private List<LookupDto> statuses = [];
+    private bool dirty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        try { statuses = await Lookups.GetAsync(LookupClient.AttendanceStatuses); }
+        catch (ApiException ex) { LoadError = ex.Message; }
+        Loading = false;
+    }
+
+    private Task LoadLessonsAsync() => LoadAsync(async () =>
+    {
+        timetable = classId is { } c && termId is { } t ? await Academic.TimetableAsync(t, c) : [];
+
+        // Arriving from the timetable: jump to the latest date this lesson ran.
+        if (EntryParam is { } wanted && timetable.FirstOrDefault(e => e.Id == wanted) is { } fromLink)
+        {
+            EntryParam = null;
+            date = LatestDateFor(fromLink.WeekDayName);
+            entryId = fromLink.Id;
+        }
+
+        var weekday = date.DayOfWeek.ToString();
+        lessons = timetable
+            .Where(e => e.WeekDayName.Equals(weekday, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(e => e.PeriodOrder)
+            .ToList();
+        if (entryId is not null && lessons.All(l => l.Id != entryId)) entryId = null;
+        await LoadRegisterAsync();
+    });
+
+    private Task SelectLessonAsync(Guid id)
+    {
+        entryId = id;
+        return LoadDataAsync();
+    }
+
+    private Task LoadDataAsync() => LoadAsync(LoadRegisterAsync);
+
+    private async Task LoadRegisterAsync()
+    {
+        dirty = false;
+        detail = entryId is { } e ? await Attendance.SubjectAsync(e, date) : null;
+        rows = detail?.Entries
+            .OrderBy(x => x.StudentLastName).ThenBy(x => x.StudentFirstName)
+            .Select(x => new AttendanceMarker.MarkRow
+            {
+                EntryId = x.Id,
+                StudentId = x.StudentId,
+                Name = x.StudentName,
+                AdmissionNumber = x.StudentAdmissionNumber,
+                FirstName = x.StudentFirstName,
+                LastName = x.StudentLastName,
+                PhotoUrl = x.StudentPhotoUrl,
+                StatusId = x.AttendanceStatusId,
+                Remarks = x.Remarks,
+            }).ToList() ?? [];
+    }
+
+    private async Task OpenAsync()
+    {
+        if (entryId is not { } e) return;
+        var result = await RunAsync(() => Attendance.OpenSubjectAsync(e, date), "Register opened.");
+        if (result.Succeeded) await LoadDataAsync();
+    }
+
+    private async Task<bool> SaveAsync(bool reload)
+    {
+        if (detail is null) return false;
+        var id = detail.Session.Id;
+        var ok = await RunAsync(() => Attendance.SaveSubjectAsync(id, new BulkSetSubjectAttendanceRequest
+        {
+            SessionId = id,
+            Entries = rows.Select(r => new UpsertSubjectEntryRequest
+            {
+                Id = r.EntryId,
+                SessionId = id,
+                StudentId = r.StudentId,
+                AttendanceStatusId = r.StatusId,
+                Remarks = r.Remarks,
+            }).ToList(),
+        }), reload ? "Register saved." : null);
+        if (ok)
+        {
+            dirty = false;
+            if (reload) await LoadDataAsync();
+        }
+        return ok;
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (detail is null) return;
+        if (dirty && !await SaveAsync(false)) return;
+        var id = detail.Session.Id;
+        if (await RunAsync(() => Attendance.SubmitSubjectAsync(id), "Register submitted."))
+            await LoadDataAsync();
+    }
+
+    private async Task ReopenAsync()
+    {
+        if (detail is null) return;
+        var id = detail.Session.Id;
+        if (await RunAsync(() => Attendance.ReopenSubjectAsync(id), "Register reopened."))
+            await LoadDataAsync();
+    }
+
+    private static DateOnly LatestDateFor(string weekDayName)
+    {
+        var d = DateOnly.FromDateTime(DateTime.Today);
+        for (var i = 0; i < 7; i++, d = d.AddDays(-1))
+            if (d.DayOfWeek.ToString().Equals(weekDayName, StringComparison.OrdinalIgnoreCase)) return d;
+        return DateOnly.FromDateTime(DateTime.Today);
+    }
+}

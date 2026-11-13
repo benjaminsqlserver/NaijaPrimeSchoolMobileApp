@@ -1,0 +1,23 @@
+﻿<Router AppAssembly="typeof(Layout.MainLayout).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+            <Authorizing>
+                <div class="nps-splash"><RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" /></div>
+            </Authorizing>
+            <NotAuthorized>
+                @if (context.User.Identity?.IsAuthenticated == true)
+                {
+                    <div class="nps-page">
+                        <EmptyState Icon="lock" Title="Access denied"
+                                    Message="Your account does not have permission to open this page." />
+                    </div>
+                }
+                else
+                {
+                    <RedirectToLogin />
+                }
+            </NotAuthorized>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+</Router>

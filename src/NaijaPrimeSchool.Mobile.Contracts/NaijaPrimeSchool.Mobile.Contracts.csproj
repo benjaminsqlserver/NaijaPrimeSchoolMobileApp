@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Wire contracts shared by the Mobile API and every client host (MAUI,
+    Blazor Web/Auto). The DTOs, lookup shapes and role names come straight
+    from the web app's Application/Domain layers so the mobile app speaks
+    exactly the same language as NaijaPrimeSchool.Web; this project only adds
+    the bits that exist because the mobile app talks over HTTP (tokens,
+    composite portal views, app configuration).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(NaijaPrimeSchoolWebSrc)NaijaPrimeSchool.Application\NaijaPrimeSchool.Application.csproj" />
+  </ItemGroup>
+
+</Project>

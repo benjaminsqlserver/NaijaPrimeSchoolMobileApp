@@ -1,0 +1,17 @@
+@* Badge coloured from a lookup row's Code (the same codes the web app keys
+   its badge colours on), never from a hard-coded enum. *@
+<RadzenBadge BadgeStyle="@Style" Shade="Shade.Lighter" Text="@Text" IsPill="true" />
+
+@code {
+    [Parameter] public string? Code { get; set; }
+    [Parameter] public string Text { get; set; } = string.Empty;
+
+    private BadgeStyle Style => Code?.ToUpperInvariant() switch
+    {
+        "PAID" or "SUCCEEDED" or "CONFIRMED" or "SENT" or "PUBLISHED" or "ACTIVE" or "P" or "OPEN" => BadgeStyle.Success,
+        "PARTIAL" or "PENDING" or "REVIEW" or "L" or "DRAFT" => BadgeStyle.Warning,
+        "OVERDUE" or "FAILED" or "BOUNCED" or "A" or "INACTIVE" or "REFUNDED" => BadgeStyle.Danger,
+        "CANCELLED" or "CLOSED" or "ABANDONED" or "SKIPPED" => BadgeStyle.Secondary,
+        _ => BadgeStyle.Info,
+    };
+}

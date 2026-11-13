@@ -1,0 +1,83 @@
+@* Picks a class (and optionally a term) in the current session. A teacher's
+   own class (where they are class teacher) is pre-selected. *@
+@inject AcademicClient Academic
+
+<div class="nps-filters">
+    <RadzenDropDown TValue="Guid?" Value="ClassId" Data="classes" TextProperty="Name" ValueProperty="Id"
+                    Placeholder="Class" Change="OnClassChanged" Style="flex:1;min-width:8rem" />
+    @if (ShowTerm)
+    {
+        <RadzenDropDown TValue="Guid?" Value="TermId" Data="terms" TextProperty="TermTypeName" ValueProperty="Id"
+                        Placeholder="Term" Change="OnTermChanged" Style="flex:1;min-width:8rem" />
+    }
+    @ChildContent
+</div>
+@if (!string.IsNullOrEmpty(error))
+{
+    <RadzenAlert AlertStyle="AlertStyle.Warning" Shade="Shade.Lighter" AllowClose="false">@error</RadzenAlert>
+}
+
+@code {
+    [Parameter] public Guid? ClassId { get; set; }
+    [Parameter] public EventCallback<Guid?> ClassIdChanged { get; set; }
+    [Parameter] public Guid? TermId { get; set; }
+    [Parameter] public EventCallback<Guid?> TermIdChanged { get; set; }
+    [Parameter] public bool ShowTerm { get; set; } = true;
+    [Parameter] public Guid? CurrentUserId { get; set; }
+
+    // Raised once after defaults are chosen and whenever the user changes a value.
+    [Parameter] public EventCallback OnChanged { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private List<SchoolClassDto> classes = [];
+    private List<TermDto> terms = [];
+    private string? error;
+
+    public IReadOnlyList<TermDto> Terms => terms;
+    public SchoolClassDto? SelectedClass => classes.FirstOrDefault(c => c.Id == ClassId);
+    public TermDto? SelectedTerm => terms.FirstOrDefault(t => t.Id == TermId);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var session = await Academic.CurrentSessionAsync();
+            classes = (await Academic.ClassesAsync(session?.Id)).OrderBy(c => c.Name).ToList();
+            terms = (await Academic.TermsAsync(session?.Id)).OrderBy(t => t.StartDate).ToList();
+            if (session is null) error = "No current academic session is set. Ask the head teacher to set one on the web portal.";
+
+            var changed = false;
+            if (ClassId is null && classes.Count > 0)
+            {
+                ClassId = (classes.FirstOrDefault(c => c.ClassTeacherId == CurrentUserId) ?? classes[0]).Id;
+                await ClassIdChanged.InvokeAsync(ClassId);
+                changed = true;
+            }
+            if (ShowTerm && TermId is null && terms.Count > 0)
+            {
+                TermId = (terms.FirstOrDefault(t => t.IsCurrent) ?? terms[^1]).Id;
+                await TermIdChanged.InvokeAsync(TermId);
+                changed = true;
+            }
+            if (changed || ClassId is not null) await OnChanged.InvokeAsync();
+        }
+        catch (ApiException ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private async Task OnClassChanged(object? value)
+    {
+        ClassId = value as Guid?;
+        await ClassIdChanged.InvokeAsync(ClassId);
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task OnTermChanged(object? value)
+    {
+        TermId = value as Guid?;
+        await TermIdChanged.InvokeAsync(TermId);
+        await OnChanged.InvokeAsync();
+    }
+}

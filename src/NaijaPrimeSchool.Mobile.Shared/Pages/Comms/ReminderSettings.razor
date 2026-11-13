@@ -1,0 +1,82 @@
+@page "/settings/reminders"
+@attribute [Authorize(Roles = RoleGroups.Family)]
+@inject CommsClient Comms
+
+<PageHeader Title="Reminder settings" Subtitle="Email and SMS nudges for unread notices and replies" />
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (prefs is not null)
+    {
+        <div class="nps-card nps-form">
+            <div class="nps-switch-row">
+                <div>
+                    <strong>Email reminders</strong>
+                    <small class="nps-muted">@(prefs.EmailDestination ?? "No email address on file")@(prefs.SchoolEmailEnabled ? "" : " · currently switched off by the school")</small>
+                </div>
+                <RadzenSwitch @bind-Value="model.EmailEnabled" />
+            </div>
+            <div class="nps-switch-row">
+                <div>
+                    <strong>SMS reminders</strong>
+                    <small class="nps-muted">@(prefs.SmsDestination ?? "No phone number on file")@(prefs.SchoolSmsEnabled ? "" : " · currently switched off by the school")</small>
+                </div>
+                <RadzenSwitch @bind-Value="model.SmsEnabled" />
+            </div>
+            <div class="nps-switch-row">
+                <div>
+                    <strong>Quiet hours</strong>
+                    <small class="nps-muted">Hold reminders overnight (@prefs.TimeZone). Emergency notices still get through.</small>
+                </div>
+                <RadzenSwitch @bind-Value="model.QuietHoursEnabled" />
+            </div>
+            @if (model.QuietHoursEnabled)
+            {
+                <div class="nps-two">
+                    <div class="nps-field">
+                        <label>From</label>
+                        <input type="time" class="rz-textbox" value="@model.QuietHoursStart.ToString("HH:mm")"
+                               @onchange="@(e => model.QuietHoursStart = ParseTime(e.Value, model.QuietHoursStart))" />
+                    </div>
+                    <div class="nps-field">
+                        <label>Until</label>
+                        <input type="time" class="rz-textbox" value="@model.QuietHoursEnd.ToString("HH:mm")"
+                               @onchange="@(e => model.QuietHoursEnd = ParseTime(e.Value, model.QuietHoursEnd))" />
+                    </div>
+                </div>
+            }
+            <RadzenButton Text="Save" Icon="save" IsBusy="Busy" Click="SaveAsync" />
+        </div>
+    }
+</PageState>
+
+@code {
+    private NotificationPreferenceDto? prefs;
+    private UpdateNotificationPreferenceRequest model = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await LoadDataAsync();
+    }
+
+    private Task LoadDataAsync() => LoadAsync(async () =>
+    {
+        prefs = await Comms.PreferencesAsync();
+        if (prefs is not null)
+        {
+            model = new UpdateNotificationPreferenceRequest
+            {
+                EmailEnabled = prefs.EmailEnabled,
+                SmsEnabled = prefs.SmsEnabled,
+                QuietHoursEnabled = prefs.QuietHoursEnabled,
+                QuietHoursStart = prefs.QuietHoursStart,
+                QuietHoursEnd = prefs.QuietHoursEnd,
+            };
+        }
+    });
+
+    private Task SaveAsync() => RunAsync(() => Comms.SavePreferencesAsync(model), "Reminder settings saved.");
+
+    private static TimeOnly ParseTime(object? value, TimeOnly fallback) =>
+        TimeOnly.TryParse(value?.ToString(), System.Globalization.CultureInfo.InvariantCulture, out var t) ? t : fallback;
+}

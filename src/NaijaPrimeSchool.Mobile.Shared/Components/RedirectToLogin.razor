@@ -1,0 +1,12 @@
+@inject NavigationManager Nav
+
+@code {
+    protected override void OnInitialized()
+    {
+        var relative = Nav.ToBaseRelativePath(Nav.Uri);
+        var target = string.IsNullOrEmpty(relative) || relative.StartsWith("login", StringComparison.OrdinalIgnoreCase)
+            ? "login"
+            : $"login?returnUrl={Uri.EscapeDataString("/" + relative)}";
+        Nav.NavigateTo(target, replace: true);
+    }
+}

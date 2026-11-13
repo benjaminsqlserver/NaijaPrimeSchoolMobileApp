@@ -1,0 +1,16 @@
+<div class="nps-empty">
+    <span class="rzi">@Icon</span>
+    <strong>@Title</strong>
+    @if (!string.IsNullOrEmpty(Message))
+    {
+        <p>@Message</p>
+    }
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public string Icon { get; set; } = "inbox";
+    [Parameter] public string Title { get; set; } = "Nothing here yet";
+    [Parameter] public string? Message { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

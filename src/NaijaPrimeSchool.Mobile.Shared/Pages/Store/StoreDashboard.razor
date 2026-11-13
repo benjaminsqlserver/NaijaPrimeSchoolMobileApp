@@ -1,0 +1,60 @@
+@page "/store"
+@attribute [Authorize(Roles = RoleGroups.Store)]
+@inject StoreClient Store
+
+<PageHeader Title="Store dashboard" Subtitle="Stock on hand and recent movements">
+    <Actions>
+        <RadzenButton Text="Record" Icon="post_add" Size="ButtonSize.Small" Click="@(() => Nav.NavigateTo("store/movements/new"))" />
+    </Actions>
+</PageHeader>
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (summary is not null)
+    {
+        <div class="nps-stats">
+            <StatTile Icon="inventory_2" Label="Active items" Value="@summary.ActiveItems.ToString()" Hint="@($"{summary.TotalItems} in catalog")" Tone="blue" Href="store/items" />
+            <StatTile Icon="production_quantity_limits" Label="Below reorder" Value="@summary.ItemsBelowReorder.ToString()"
+                      Tone="@(summary.ItemsBelowReorder > 0 ? "red" : "green")" Href="store/items?low=true" />
+            <StatTile Icon="account_balance_wallet" Label="Stock value" Value="@Format.Money(summary.StockValue)" />
+            <StatTile Icon="swap_vert" Label="Movements this month" Value="@summary.MovementsThisMonth.ToString()"
+                      Hint="@($"{summary.InboundThisMonth} in · {summary.OutboundThisMonth} out")" Tone="grey" Href="store/movements" />
+        </div>
+
+        @if (summary.LowStockItems.Count > 0)
+        {
+            <h3 class="nps-section-title">Low stock</h3>
+            <div class="nps-list">
+                @foreach (var i in summary.LowStockItems)
+                {
+                    <ListRow Href="@($"store/items/{i.Id}")" Title="@i.Name" Subtitle="@($"{i.ItemCategoryName} · reorder at {Format.Quantity(i.ReorderLevel)}")">
+                        <Trailing><span class="nps-danger nps-amount">@Format.Quantity(i.QuantityOnHand) @i.UnitOfMeasureCode</span></Trailing>
+                    </ListRow>
+                }
+            </div>
+        }
+
+        <h3 class="nps-section-title">Recent movements</h3>
+        @if (summary.RecentMovements.Count == 0)
+        {
+            <EmptyState Icon="swap_vert" Title="No movements yet" />
+        }
+        <div class="nps-list">
+            @foreach (var m in summary.RecentMovements)
+            {
+                <MovementRow Movement="m" OnClick="@(() => Nav.NavigateTo($"store/items/{m.StoreItemId}"))" />
+            }
+        </div>
+    }
+</PageState>
+
+@code {
+    private StoreSummaryDto? summary;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await LoadDataAsync();
+    }
+
+    private Task LoadDataAsync() => LoadAsync(async () => summary = await Store.SummaryAsync());
+}

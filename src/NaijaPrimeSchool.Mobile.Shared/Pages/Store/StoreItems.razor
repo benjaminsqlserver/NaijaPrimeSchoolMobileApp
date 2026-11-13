@@ -1,0 +1,58 @@
+@page "/store/items"
+@attribute [Authorize(Roles = RoleGroups.Store)]
+@inject StoreClient Store
+@inject LookupClient Lookups
+
+<PageHeader Title="Catalog" Subtitle="@($"{items.Count} items · value {Format.Money(items.Sum(i => i.StockValue))}")" />
+
+<div class="nps-filters">
+    <RadzenTextBox @bind-Value="search" Placeholder="Name or SKU" Style="flex:2;min-width:0" @onkeydown="OnSearchKey" />
+    <RadzenDropDown TValue="Guid?" @bind-Value="categoryId" Data="categories" TextProperty="Name" ValueProperty="Id" AllowClear="true"
+                    Placeholder="All categories" Change="@(_ => LoadDataAsync())" Style="flex:1;min-width:7rem" />
+    <label class="nps-check"><RadzenCheckBox @bind-Value="lowOnly" Change="@((bool _) => LoadDataAsync())" /> Low stock</label>
+</div>
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (items.Count == 0)
+    {
+        <EmptyState Icon="inventory_2" Title="No items match" />
+    }
+    <Virtualize Items="items" Context="i" ItemSize="64">
+        <ListRow Href="@($"store/items/{i.Id}")" Title="@i.Name" Subtitle="@($"{i.ItemCategoryName}{(i.Sku is null ? "" : " · " + i.Sku)}")">
+            <Trailing>
+                <div class="nps-right">
+                    <span class="nps-amount @(i.IsBelowReorder ? "nps-danger" : null)">@Format.Quantity(i.QuantityOnHand) @i.UnitOfMeasureCode</span>
+                    @if (!i.IsActive) { <StatusBadge Code="INACTIVE" Text="Inactive" /> }
+                </div>
+            </Trailing>
+        </ListRow>
+    </Virtualize>
+</PageState>
+
+@code {
+    [SupplyParameterFromQuery(Name = "low")] public bool? Low { get; set; }
+
+    private List<StoreItemDto> items = [];
+    private List<LookupDto> categories = [];
+    private string? search;
+    private Guid? categoryId;
+    private bool lowOnly;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        lowOnly = Low == true;
+        await LoadAsync(async () =>
+        {
+            categories = await Lookups.GetAsync(LookupClient.ItemCategories);
+            items = await Store.ItemsAsync(search, categoryId, lowOnly ? true : null);
+        });
+    }
+
+    private Task LoadDataAsync() => LoadAsync(async () => items = await Store.ItemsAsync(search, categoryId, lowOnly ? true : null));
+
+    private async Task OnSearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await LoadDataAsync();
+    }
+}

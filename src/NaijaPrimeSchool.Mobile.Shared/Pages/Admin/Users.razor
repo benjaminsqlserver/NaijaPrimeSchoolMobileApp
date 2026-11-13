@@ -1,0 +1,73 @@
+@page "/users"
+@attribute [Authorize(Roles = RoleGroups.UserAdmins)]
+@inject UserClient UsersApi
+
+<PageHeader Title="Users" Subtitle="@($"{total} accounts")" />
+
+<div class="nps-filters">
+    <RadzenTextBox @bind-Value="search" Placeholder="Name, username or email" Style="flex:2;min-width:0" @onkeydown="OnSearchKey" />
+    <RadzenDropDown TValue="string" @bind-Value="role" Data="Roles.All" AllowClear="true" Placeholder="Any role"
+                    Change="@(_ => ReloadAsync())" Style="flex:1;min-width:7rem" />
+</div>
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="ReloadAsync">
+    @if (items.Count == 0)
+    {
+        <EmptyState Icon="manage_accounts" Title="No users found" />
+    }
+    <div class="nps-list">
+        @foreach (var u in items)
+        {
+            <ListRow Href="@($"users/{u.Id}")" Title="@u.FullName" Subtitle="@($"{u.UserName} · {string.Join(", ", u.Roles)}")">
+                <Leading><span class="nps-avatar nps-avatar-medium nps-avatar-initials" style="background:var(--nps-green-700)">@Format.Initials(u.FirstName, u.LastName)</span></Leading>
+                <Trailing>
+                    <StatusBadge Code="@(u.IsActive ? "ACTIVE" : "INACTIVE")" Text="@(u.IsActive ? "Active" : "Inactive")" />
+                </Trailing>
+            </ListRow>
+        }
+    </div>
+    @if (items.Count < total)
+    {
+        <RadzenButton Text="Load more" Icon="expand_more" ButtonStyle="ButtonStyle.Light" IsBusy="Busy" Click="MoreAsync" Style="width:100%;margin-top:1rem" />
+    }
+</PageState>
+
+@code {
+    private const int PageSize = 25;
+    private readonly List<UserDto> items = [];
+    private int total;
+    private string? search;
+    private string? role;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await ReloadAsync();
+    }
+
+    private Task ReloadAsync() => LoadAsync(async () =>
+    {
+        items.Clear();
+        var page = await UsersApi.UsersAsync(search, role, null, 0, PageSize);
+        items.AddRange(page.Items);
+        total = page.TotalCount;
+    });
+
+    private async Task MoreAsync()
+    {
+        Busy = true;
+        try
+        {
+            var page = await UsersApi.UsersAsync(search, role, null, items.Count, PageSize);
+            items.AddRange(page.Items);
+            total = page.TotalCount;
+        }
+        catch (ApiException ex) { Error(ex.Message); }
+        finally { Busy = false; }
+    }
+
+    private async Task OnSearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await ReloadAsync();
+    }
+}

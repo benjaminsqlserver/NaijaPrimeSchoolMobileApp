@@ -1,0 +1,31 @@
+@if (string.IsNullOrEmpty(Href))
+{
+    <div class="nps-stat nps-stat-@Tone">@Body</div>
+}
+else
+{
+    <a class="nps-stat nps-stat-@Tone nps-stat-link" href="@Href">@Body</a>
+}
+
+@code {
+    [Parameter] public string Icon { get; set; } = "insights";
+    [Parameter] public string Label { get; set; } = string.Empty;
+    [Parameter] public string Value { get; set; } = string.Empty;
+    [Parameter] public string? Hint { get; set; }
+
+    // green | amber | red | blue | grey
+    [Parameter] public string Tone { get; set; } = "green";
+    [Parameter] public string? Href { get; set; }
+
+    private RenderFragment Body => @<text>
+        <span class="rzi nps-stat-icon">@Icon</span>
+        <div class="nps-stat-text">
+            <small>@Label</small>
+            <strong>@Value</strong>
+            @if (!string.IsNullOrEmpty(Hint))
+            {
+                <span>@Hint</span>
+            }
+        </div>
+    </text>;
+}

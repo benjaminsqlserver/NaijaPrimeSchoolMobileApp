@@ -1,0 +1,44 @@
+@* A tappable row for list screens: optional leading content, title,
+   subtitle and trailing content. Renders as a link when Href is set. *@
+@if (!string.IsNullOrEmpty(Href))
+{
+    <a class="nps-row" href="@Href">@Inner</a>
+}
+else if (OnClick.HasDelegate)
+{
+    <button type="button" class="nps-row" @onclick="OnClick">@Inner</button>
+}
+else
+{
+    <div class="nps-row">@Inner</div>
+}
+
+@code {
+    [Parameter] public string? Href { get; set; }
+    [Parameter] public EventCallback OnClick { get; set; }
+    [Parameter] public RenderFragment? Leading { get; set; }
+    [Parameter] public string Title { get; set; } = string.Empty;
+    [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public RenderFragment? Trailing { get; set; }
+    [Parameter] public RenderFragment? Extra { get; set; }
+    [Parameter] public bool Unread { get; set; }
+
+    private RenderFragment Inner => @<text>
+        @if (Leading is not null)
+        {
+            <div class="nps-row-leading">@Leading</div>
+        }
+        <div class="nps-row-main">
+            <span class="nps-row-title @(Unread ? "nps-unread" : null)">@Title</span>
+            @if (!string.IsNullOrEmpty(Subtitle))
+            {
+                <span class="nps-row-sub">@Subtitle</span>
+            }
+            @Extra
+        </div>
+        @if (Trailing is not null)
+        {
+            <div class="nps-row-trailing">@Trailing</div>
+        }
+    </text>;
+}

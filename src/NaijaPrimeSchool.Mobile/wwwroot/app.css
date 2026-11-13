@@ -1,0 +1,19 @@
+/* Host-specific tweaks for the MAUI WebView; shared styles live in
+   NaijaPrimeSchool.Mobile.Shared/wwwroot/app.css. */
+html, body {
+    overscroll-behavior-y: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+input, textarea, [contenteditable] {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+@supports (-webkit-touch-callout: none) {
+    .nps-page {
+        padding-left: max(1rem, env(safe-area-inset-left));
+        padding-right: max(1rem, env(safe-area-inset-right));
+    }
+}

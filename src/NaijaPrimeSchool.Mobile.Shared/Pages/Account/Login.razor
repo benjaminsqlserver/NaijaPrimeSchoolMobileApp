@@ -1,0 +1,119 @@
+@page "/login"
+@attribute [AllowAnonymous]
+@layout LoginLayout
+@inject SessionManager Sessions
+@inject ApiSettings Api
+@inject ISecureStore Store
+@inject IPlatformService Platform
+@inject LookupClient Lookups
+
+<div class="nps-login-card">
+    <div class="nps-login-brand">
+        <span class="nps-brand-badge nps-brand-badge-lg">NPS</span>
+        <h1>@App.Config.SchoolName</h1>
+        <p>Sign in with the same username or email and password you use on the school portal.</p>
+    </div>
+
+    <EditForm Model="model" OnValidSubmit="SignInAsync" class="nps-form">
+        <DataAnnotationsValidator />
+
+        <div class="nps-field">
+            <label for="login-user">Email or username</label>
+            <RadzenTextBox id="login-user" @bind-Value="model.UserNameOrEmail" autocomplete="username"
+                           Placeholder="e.g. adaeze.okafor" Style="width:100%" />
+            <ValidationMessage For="() => model.UserNameOrEmail" />
+        </div>
+
+        <div class="nps-field">
+            <label for="login-password">Password</label>
+            <RadzenPassword id="login-password" @bind-Value="model.Password" autocomplete="current-password" Style="width:100%" />
+            <ValidationMessage For="() => model.Password" />
+        </div>
+
+        @if (!string.IsNullOrEmpty(error))
+        {
+            <RadzenAlert AlertStyle="AlertStyle.Danger" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">@error</RadzenAlert>
+        }
+
+        <RadzenButton ButtonType="ButtonType.Submit" Text="Sign in" Icon="login" IsBusy="@busy" BusyText="Signing in…"
+                      ButtonStyle="ButtonStyle.Primary" Size="ButtonSize.Large" Style="width:100%" />
+    </EditForm>
+
+    @if (Platform.CanChangeServer)
+    {
+        <details class="nps-server">
+            <summary>School server</summary>
+            <p class="nps-muted">Address of the Naija Prime School mobile API. Ask the school office if you are unsure.</p>
+            <RadzenTextBox @bind-Value="serverUrl" Placeholder="https://..." Style="width:100%" />
+            <div class="nps-inline-actions">
+                <RadzenButton Text="Save" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Light" Click="SaveServerAsync" />
+                <RadzenButton Text="Reset" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Text" Click="ResetServerAsync" />
+            </div>
+            <small class="nps-muted">Currently: @Api.BaseUrl</small>
+        </details>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+
+    private readonly LoginRequest model = new() { DeviceId = "pending-device" };
+    private string? error;
+    private bool busy;
+    private string serverUrl = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await Api.LoadAsync(Store);
+        serverUrl = Api.BaseUrl;
+
+        // Already signed in (e.g. app relaunch): go straight in.
+        if (await Sessions.GetSessionAsync() is not null)
+            Nav.NavigateTo(SafeReturnUrl, replace: true);
+        Loading = false;
+    }
+
+    private async Task SignInAsync()
+    {
+        busy = true;
+        error = null;
+        var result = await Sessions.SignInAsync(model.UserNameOrEmail.Trim(), model.Password);
+        busy = false;
+        if (!result.Succeeded)
+        {
+            error = result.Error;
+            model.Password = string.Empty;
+            return;
+        }
+        Lookups.Clear();
+        Nav.NavigateTo(SafeReturnUrl, replace: true);
+    }
+
+    private async Task SaveServerAsync()
+    {
+        if (!ApiSettings.IsValid(serverUrl))
+        {
+            Error("Enter a full address that starts with https:// (or http:// on a local network).");
+            return;
+        }
+        await Api.SetOverrideAsync(Store, serverUrl);
+        App.ResetConfig();
+        await App.EnsureConfigAsync();
+        Success("Server address saved.");
+    }
+
+    private async Task ResetServerAsync()
+    {
+        await Api.SetOverrideAsync(Store, null);
+        serverUrl = Api.BaseUrl;
+        App.ResetConfig();
+        await App.EnsureConfigAsync();
+    }
+
+    // Only ever return to a page inside the app.
+    private string SafeReturnUrl =>
+        !string.IsNullOrEmpty(ReturnUrl) && ReturnUrl.StartsWith('/') && !ReturnUrl.StartsWith("//")
+            ? ReturnUrl.TrimStart('/')
+            : "";
+}

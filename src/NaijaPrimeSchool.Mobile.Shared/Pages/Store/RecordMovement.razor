@@ -1,0 +1,179 @@
+@page "/store/movements/new"
+@attribute [Authorize(Roles = RoleGroups.Store)]
+@inject StoreClient Store
+@inject LookupClient Lookups
+
+<PageHeader Title="Record movement" Subtitle="Receive, issue or adjust stock" BackHref="store/movements" />
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="InitAsync">
+    <div class="nps-card nps-form">
+        <div class="nps-field">
+            <label>Item</label>
+            <RadzenDropDown TValue="Guid?" @bind-Value="model.ItemId" Data="items" TextProperty="Name" ValueProperty="Id"
+                            AllowFiltering="true" FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive" Placeholder="Choose an item" Style="width:100%" />
+        </div>
+        <div class="nps-field">
+            <label>Movement type</label>
+            <RadzenDropDown TValue="Guid?" @bind-Value="model.TypeId" Data="types" TextProperty="Name" ValueProperty="Id"
+                            Placeholder="Purchase, issue, write-off…" Change="@(_ => OnTypeChanged())" Style="width:100%" />
+        </div>
+        <div class="nps-two">
+            <div class="nps-field">
+                <label>Quantity</label>
+                <RadzenNumeric TValue="decimal" @bind-Value="model.Quantity" Min="0" ShowUpDown="false" Style="width:100%" />
+            </div>
+            <div class="nps-field">
+                <label>Unit cost (₦)</label>
+                <RadzenNumeric TValue="decimal" @bind-Value="model.UnitCost" Min="0" Format="#,##0.00" ShowUpDown="false" Style="width:100%" />
+            </div>
+        </div>
+        <div class="nps-field">
+            <label>Date</label>
+            <RadzenDatePicker TValue="DateOnly" @bind-Value="model.MovedOn" DateFormat="d MMM yyyy" Max="DateTime.Today" Style="width:100%" />
+        </div>
+
+        @if (direction > 0)
+        {
+            <div class="nps-field">
+                <label>Supplier (optional)</label>
+                <RadzenDropDown TValue="Guid?" @bind-Value="model.SupplierId" Data="suppliers" TextProperty="Name" ValueProperty="Id" AllowClear="true" Style="width:100%" />
+            </div>
+        }
+        else if (direction < 0)
+        {
+            <div class="nps-field">
+                <label>Issued to (optional, pick one)</label>
+                <RadzenSelectBar @bind-Value="recipientKind" TValue="string" Size="ButtonSize.Small" Change="@(_ => ClearRecipients())">
+                    <Items>
+                        <RadzenSelectBarItem Text="Pupil" Value="@("student")" />
+                        <RadzenSelectBarItem Text="Class" Value="@("class")" />
+                        <RadzenSelectBarItem Text="Staff" Value="@("staff")" />
+                    </Items>
+                </RadzenSelectBar>
+            </div>
+            @switch (recipientKind)
+            {
+                case "student":
+                    <RadzenDropDown TValue="Guid?" @bind-Value="model.StudentId" Data="students" TextProperty="Name" ValueProperty="Id" AllowClear="true"
+                                    AllowFiltering="true" LoadData="SearchStudentsAsync" Placeholder="Type a pupil's name" Style="width:100%" />
+                    break;
+                case "class":
+                    <RadzenDropDown TValue="Guid?" @bind-Value="model.ClassId" Data="classes" TextProperty="Name" ValueProperty="Id" AllowClear="true" Style="width:100%" />
+                    break;
+                case "staff":
+                    <RadzenDropDown TValue="Guid?" @bind-Value="model.UserId" Data="teachers" TextProperty="Name" ValueProperty="Id" AllowClear="true"
+                                    AllowFiltering="true" FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive" Style="width:100%" />
+                    break;
+            }
+        }
+
+        <div class="nps-two">
+            <div class="nps-field">
+                <label>Reference</label>
+                <RadzenTextBox @bind-Value="model.Reference" MaxLength="120" Placeholder="Waybill / requisition no." Style="width:100%" />
+            </div>
+            <div class="nps-field">
+                <label>Notes</label>
+                <RadzenTextBox @bind-Value="model.Notes" MaxLength="300" Style="width:100%" />
+            </div>
+        </div>
+
+        <RadzenButton Text="Record movement" Icon="save" IsBusy="Busy" Click="SaveAsync" Size="ButtonSize.Large" Style="width:100%"
+                      Disabled="@(model.ItemId is null || model.TypeId is null || model.Quantity <= 0)" />
+    </div>
+</PageState>
+
+@code {
+    private sealed class Model
+    {
+        public Guid? ItemId { get; set; }
+        public Guid? TypeId { get; set; }
+        public decimal Quantity { get; set; }
+        public decimal UnitCost { get; set; }
+        public DateOnly MovedOn { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+        public Guid? SupplierId { get; set; }
+        public Guid? StudentId { get; set; }
+        public Guid? ClassId { get; set; }
+        public Guid? UserId { get; set; }
+        public string? Reference { get; set; }
+        public string? Notes { get; set; }
+    }
+
+    [SupplyParameterFromQuery(Name = "itemId")] public Guid? ItemParam { get; set; }
+
+    private readonly Model model = new();
+    private List<LookupDto> items = [];
+    private List<LookupDto> types = [];
+    private List<LookupDto> suppliers = [];
+    private List<LookupDto> classes = [];
+    private List<LookupDto> teachers = [];
+    private List<LookupDto> students = [];
+    private int direction;
+    private string recipientKind = "student";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await InitAsync();
+    }
+
+    private Task InitAsync() => LoadAsync(async () =>
+    {
+        items = await Lookups.SearchAsync(LookupClient.StoreItems);
+        types = await Lookups.GetAsync(LookupClient.StockMovementTypes);
+        suppliers = await Lookups.GetAsync(LookupClient.Suppliers);
+        classes = await Lookups.GetAsync(LookupClient.Classes);
+        teachers = await Lookups.GetAsync(LookupClient.Teachers);
+        model.ItemId ??= ItemParam;
+    });
+
+    // Same rule as the web form: the type's code says whether stock comes in
+    // (supplier) or goes out (pupil / class / staff member).
+    private void OnTypeChanged()
+    {
+        model.SupplierId = null;
+        ClearRecipients();
+        direction = types.FirstOrDefault(t => t.Id == model.TypeId)?.Code switch
+        {
+            "OPENING" or "PURCHASE" or "RETURN" or "ADJ_IN" => +1,
+            "ISSUE" or "WRITEOFF" or "ADJ_OUT" => -1,
+            _ => 0,
+        };
+    }
+
+    private void ClearRecipients()
+    {
+        model.StudentId = null;
+        model.ClassId = null;
+        model.UserId = null;
+    }
+
+    private async Task SearchStudentsAsync(LoadDataArgs args)
+    {
+        if (string.IsNullOrWhiteSpace(args.Filter) || args.Filter.Length < 2) return;
+        try { students = await Lookups.SearchAsync(LookupClient.Students, args.Filter); }
+        catch (ApiException ex) { Error(ex.Message); }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (model.ItemId is not { } itemId || model.TypeId is not { } typeId) return;
+        var request = new RecordStockMovementRequest
+        {
+            StoreItemId = itemId,
+            StockMovementTypeId = typeId,
+            MovedOn = model.MovedOn,
+            Quantity = model.Quantity,
+            UnitCost = model.UnitCost,
+            Reference = model.Reference,
+            Notes = model.Notes,
+            ReceivedFromSupplierId = model.SupplierId,
+            IssuedToStudentId = model.StudentId,
+            IssuedToSchoolClassId = model.ClassId,
+            IssuedToUserId = model.UserId,
+        };
+        var result = await RunAsync(() => Store.RecordMovementAsync(request), "Movement recorded.");
+        if (result.Succeeded)
+            Nav.NavigateTo($"store/items/{itemId}", replace: true);
+    }
+}

@@ -1,0 +1,43 @@
+@page "/attendance/summary"
+@attribute [Authorize(Roles = RoleGroups.AcademicStaff)]
+@inject AttendanceClient Attendance
+
+<PageHeader Title="Attendance summary" Subtitle="Per-pupil attendance across a term" />
+
+<ClassTermPicker @bind-ClassId="classId" @bind-TermId="termId" CurrentUserId="CurrentUserId" OnChanged="LoadDataAsync" />
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (summary is null || summary.Students.Count == 0)
+    {
+        <EmptyState Icon="analytics" Title="No attendance recorded yet" />
+    }
+    else
+    {
+        <div class="nps-list">
+            @foreach (var s in summary.Students.OrderBy(s => s.PresentRate))
+            {
+                <ListRow Title="@s.StudentName" Subtitle="@($"{s.StudentAdmissionNumber} · present {s.DaysPresent}/{s.DaysCounted} · late {s.DaysLate} · absent {s.DaysAbsent}")">
+                    <Trailing>
+                        @* Same colour bands as the web summary: ≥90% green, ≥75% amber, else red. *@
+                        <span class="nps-pct @(s.PresentRate >= 90 ? "good" : s.PresentRate >= 75 ? "warn" : "bad")">@Format.Percent(s.PresentRate)</span>
+                    </Trailing>
+                </ListRow>
+            }
+        </div>
+    }
+</PageState>
+
+@code {
+    private Guid? classId;
+    private Guid? termId;
+    private ClassAttendanceSummaryDto? summary;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        Loading = false;
+    }
+
+    private Task LoadDataAsync() => LoadAsync(async () =>
+        summary = classId is { } c ? await Attendance.SummaryAsync(c, termId) : null);
+}

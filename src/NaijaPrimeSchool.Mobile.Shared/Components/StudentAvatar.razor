@@ -1,0 +1,35 @@
+@* Mobile port of the web app's StudentAvatar: the pupil's photo (served by
+   the web app) or a coloured initials tile when there is none. *@
+@inject AppState App
+
+@if (App.MediaUrl(PhotoUrl) is { } src && !failed)
+{
+    <img class="nps-avatar nps-avatar-@Size" src="@src" alt="@($"{FirstName} {LastName}")" @onerror="() => failed = true" />
+}
+else
+{
+    <span class="nps-avatar nps-avatar-@Size nps-avatar-initials" style="background:@Colour">@Format.Initials(FirstName, LastName)</span>
+}
+
+@code {
+    private static readonly string[] Palette = ["#0a7a43", "#1ba05c", "#f5a524", "#2563eb", "#7c3aed", "#db2777", "#0891b2", "#ea580c"];
+    private bool failed;
+
+    [Parameter] public string? PhotoUrl { get; set; }
+    [Parameter] public string? FirstName { get; set; }
+    [Parameter] public string? LastName { get; set; }
+
+    // small | medium | large
+    [Parameter] public string Size { get; set; } = "small";
+
+    private string Colour
+    {
+        get
+        {
+            var key = $"{FirstName}{LastName}";
+            var hash = 0;
+            foreach (var c in key) hash = (hash * 31 + c) & 0x7fffffff;
+            return Palette[hash % Palette.Length];
+        }
+    }
+}

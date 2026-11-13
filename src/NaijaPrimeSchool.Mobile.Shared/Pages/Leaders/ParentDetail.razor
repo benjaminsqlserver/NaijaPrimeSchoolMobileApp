@@ -1,0 +1,88 @@
+@page "/parents/{Id:guid}"
+@attribute [Authorize(Roles = RoleGroups.SchoolLeaders)]
+@inject FamilyClient Family
+
+<PageHeader Title="@(parent?.FullName ?? "Parent")" Subtitle="@parent?.Occupation" BackHref="parents" />
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (parent is null)
+    {
+        <EmptyState Icon="people_outline" Title="Parent not found" Message="The record may have been deleted." />
+    }
+    else
+    {
+        <div class="nps-card">
+            <div class="nps-contact-actions">
+                @if (!string.IsNullOrEmpty(parent.PrimaryPhone))
+                {
+                    <a class="rz-button rz-button-md rz-primary" href="@($"tel:{parent.PrimaryPhone}")"><span class="rzi">call</span> Call</a>
+                    <a class="rz-button rz-button-md rz-light" href="@($"sms:{parent.PrimaryPhone}")"><span class="rzi">sms</span> SMS</a>
+                }
+                @if (!string.IsNullOrEmpty(parent.Email))
+                {
+                    <a class="rz-button rz-button-md rz-light" href="@($"mailto:{parent.Email}")"><span class="rzi">mail</span> Email</a>
+                }
+            </div>
+            <dl class="nps-dl">
+                <dt>Phone</dt><dd>@(parent.PrimaryPhone ?? "—") @(parent.AlternatePhone is null ? "" : $" / {parent.AlternatePhone}")</dd>
+                <dt>Email</dt><dd>@(parent.Email ?? "—")</dd>
+                <dt>Address</dt><dd>@(parent.ResidentialAddress ?? "—")</dd>
+                <dt>Occupation</dt><dd>@(parent.Occupation ?? "—") @(parent.Employer is null ? "" : $"· {parent.Employer}")</dd>
+                <dt>Marital status</dt><dd>@(parent.MaritalStatusName ?? "—")</dd>
+                <dt>Status</dt><dd><StatusBadge Code="@(parent.IsActive ? "ACTIVE" : "INACTIVE")" Text="@(parent.IsActive ? "Active" : "Inactive")" /></dd>
+            </dl>
+        </div>
+
+        <h3 class="nps-section-title">Wards</h3>
+        @if (links.Count == 0)
+        {
+            <EmptyState Icon="boy" Title="No wards linked" />
+        }
+        <div class="nps-list">
+            @foreach (var l in links)
+            {
+                <ListRow Href="@($"students/{l.StudentId}")" Title="@l.StudentName" Subtitle="@($"{l.StudentAdmissionNumber} · {l.RelationshipName}")">
+                    <Trailing>
+                        @if (l.IsPrimaryContact) { <StatusBadge Code="ACTIVE" Text="Primary" /> }
+                    </Trailing>
+                </ListRow>
+            }
+        </div>
+
+        <div class="nps-danger-zone">
+            <RadzenButton Text="@(parent.IsActive ? "Deactivate" : "Activate")" Icon="@(parent.IsActive ? "person_off" : "person")"
+                          ButtonStyle="ButtonStyle.Light" IsBusy="Busy" Click="ToggleActiveAsync" />
+            <RadzenButton Text="Delete" Icon="delete" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Outlined" IsBusy="Busy" Click="DeleteAsync" />
+        </div>
+    }
+</PageState>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private ParentDto? parent;
+    private List<StudentParentDto> links = [];
+
+    protected override Task OnParametersSetAsync() => LoadDataAsync();
+
+    private Task LoadDataAsync() => LoadAsync(async () =>
+    {
+        parent = await Family.ParentAsync(Id);
+        links = parent is null ? [] : await Family.ParentStudentsAsync(Id);
+    });
+
+    private async Task ToggleActiveAsync()
+    {
+        if (parent is null) return;
+        var activate = !parent.IsActive;
+        if (await RunAsync(() => Family.SetParentActiveAsync(Id, activate), activate ? "Parent activated." : "Parent deactivated."))
+            await LoadDataAsync();
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (!await ConfirmAsync("Delete this parent? The record is soft-deleted and their portal login is retired. It is refused while wards are still linked.", "Delete parent", "Delete"))
+            return;
+        if (await RunAsync(() => Family.DeleteParentAsync(Id), "Parent deleted."))
+            Nav.NavigateTo("parents", replace: true);
+    }
+}

@@ -1,0 +1,72 @@
+@* Mirrors the web app's NavMenu: each section is shown to exactly the roles
+   whose pages it links to, so nobody gets a link that ends in
+   "Access denied". *@
+<RadzenPanelMenu class="nps-panel-menu" Multiple="true">
+    <RadzenPanelMenuItem Text="Home" Icon="home" Path="" />
+
+    <AuthorizeView Roles="@Roles.Parent">
+        <RadzenPanelMenuItem Text="My wards" Icon="family_restroom" Path="portal/parent" />
+    </AuthorizeView>
+
+    <AuthorizeView Roles="@Roles.Student">
+        <RadzenPanelMenuItem Text="Student portal" Icon="school" Expanded="true">
+            <RadzenPanelMenuItem Text="Today" Icon="today" Path="portal/student" />
+            <RadzenPanelMenuItem Text="My results" Icon="grading" Path="portal/student/results" />
+            <RadzenPanelMenuItem Text="My fees" Icon="payments" Path="portal/student/fees" />
+        </RadzenPanelMenuItem>
+    </AuthorizeView>
+
+    <AuthorizeView Roles="@RoleGroups.PortalViewers">
+        <RadzenPanelMenuItem Text="Announcements" Icon="campaign" Path="announcements" />
+    </AuthorizeView>
+    <AuthorizeView Roles="@RoleGroups.Messaging">
+        <RadzenPanelMenuItem Text="Messages" Icon="forum" Path="messages" />
+    </AuthorizeView>
+    <AuthorizeView Roles="@RoleGroups.Family">
+        <RadzenPanelMenuItem Text="Reminder settings" Icon="notifications_active" Path="settings/reminders" />
+    </AuthorizeView>
+
+    <AuthorizeView Roles="@RoleGroups.AcademicStaff">
+        <RadzenPanelMenuItem Text="Teaching" Icon="school" Expanded="true">
+            <RadzenPanelMenuItem Text="Timetable" Icon="grid_on" Path="timetable" />
+            <RadzenPanelMenuItem Text="Daily register" Icon="fact_check" Path="attendance/daily" />
+            <RadzenPanelMenuItem Text="Lesson register" Icon="schedule" Path="attendance/subject" />
+            <RadzenPanelMenuItem Text="Attendance summary" Icon="analytics" Path="attendance/summary" />
+            <RadzenPanelMenuItem Text="Score sheets" Icon="grading" Path="assessments" />
+        </RadzenPanelMenuItem>
+    </AuthorizeView>
+
+    <AuthorizeView Roles="@RoleGroups.SchoolLeaders">
+        <RadzenPanelMenuItem Text="School office" Icon="apartment" Expanded="true">
+            <RadzenPanelMenuItem Text="Students" Icon="boy" Path="students" />
+            <RadzenPanelMenuItem Text="Parents" Icon="people_outline" Path="parents" />
+            <RadzenPanelMenuItem Text="Report cards" Icon="description" Path="report-cards" />
+            <RadzenPanelMenuItem Text="Manage announcements" Icon="edit_notifications" Path="manage/announcements" />
+        </RadzenPanelMenuItem>
+    </AuthorizeView>
+
+    <AuthorizeView Roles="@RoleGroups.Finance">
+        <RadzenPanelMenuItem Text="Finance" Icon="payments" Expanded="true">
+            <RadzenPanelMenuItem Text="Bursar dashboard" Icon="space_dashboard" Path="finance" />
+            <RadzenPanelMenuItem Text="Invoices" Icon="request_quote" Path="finance/invoices" />
+            <RadzenPanelMenuItem Text="Payments" Icon="receipt_long" Path="finance/payments" />
+            <RadzenPanelMenuItem Text="Record payment" Icon="add_card" Path="finance/payments/new" />
+            <RadzenPanelMenuItem Text="Online payments" Icon="credit_card" Path="finance/online-payments" />
+        </RadzenPanelMenuItem>
+    </AuthorizeView>
+
+    <AuthorizeView Roles="@RoleGroups.Store">
+        <RadzenPanelMenuItem Text="Store" Icon="inventory_2" Expanded="true">
+            <RadzenPanelMenuItem Text="Store dashboard" Icon="space_dashboard" Path="store" />
+            <RadzenPanelMenuItem Text="Catalog" Icon="inventory_2" Path="store/items" />
+            <RadzenPanelMenuItem Text="Movements" Icon="swap_vert" Path="store/movements" />
+            <RadzenPanelMenuItem Text="Record movement" Icon="post_add" Path="store/movements/new" />
+        </RadzenPanelMenuItem>
+    </AuthorizeView>
+
+    <AuthorizeView Roles="@RoleGroups.UserAdmins">
+        <RadzenPanelMenuItem Text="Users" Icon="manage_accounts" Path="users" />
+    </AuthorizeView>
+
+    <RadzenPanelMenuItem Text="My account" Icon="person" Path="profile" />
+</RadzenPanelMenu>

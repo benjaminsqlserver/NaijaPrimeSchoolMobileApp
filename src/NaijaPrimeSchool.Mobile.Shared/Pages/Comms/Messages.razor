@@ -1,0 +1,71 @@
+@page "/messages"
+@attribute [Authorize(Roles = RoleGroups.Messaging)]
+@inject CommsClient Comms
+
+<PageHeader Title="@(IsStaff ? "Office inbox" : "Messages")" Subtitle="@(IsStaff ? "Conversations with parents and students" : "Private conversations with the school office")">
+    <Actions>
+        <RadzenButton Text="New" Icon="edit" Size="ButtonSize.Small" Click="@(() => Nav.NavigateTo("messages/new"))" />
+    </Actions>
+</PageHeader>
+
+<div class="nps-filters">
+    <RadzenTextBox @bind-Value="search" Placeholder="Search subject or name" Style="flex:1;min-width:0" @onkeydown="OnSearchKey" />
+    <RadzenSelectBar @bind-Value="show" TValue="string" Size="ButtonSize.Small" Change="@(_ => LoadDataAsync())">
+        <Items>
+            <RadzenSelectBarItem Text="Open" Value="@("open")" />
+            <RadzenSelectBarItem Text="Unread" Value="@("unread")" />
+            <RadzenSelectBarItem Text="All" Value="@("all")" />
+        </Items>
+    </RadzenSelectBar>
+</div>
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (threads.Count == 0)
+    {
+        <EmptyState Icon="forum" Title="No conversations" Message="Tap New to send the school a message." />
+    }
+    <div class="nps-list">
+        @foreach (var t in threads)
+        {
+            <ListRow Href="@($"messages/{t.Id}")" Title="@t.Subject" Unread="t.HasUnread"
+                     Subtitle="@($"{(IsStaff ? $"{t.FamilyName} ({t.FamilyRole}) · " : "")}{(t.LastMessageFromStaff ? "School: " : "")}{t.LastMessagePreview}")">
+                <Leading><span class="rzi nps-row-icon">@(t.IsClosed ? "task_alt" : t.HasUnread ? "mark_chat_unread" : "chat")</span></Leading>
+                <Trailing>
+                    <div class="nps-right">
+                        <small class="nps-muted">@Format.Ago(t.LastMessageOn)</small>
+                        @if (t.IsClosed)
+                        {
+                            <StatusBadge Code="CLOSED" Text="Resolved" />
+                        }
+                        else if (IsStaff && !t.LastMessageFromStaff)
+                        {
+                            <StatusBadge Code="PENDING" Text="Awaiting reply" />
+                        }
+                    </div>
+                </Trailing>
+            </ListRow>
+        }
+    </div>
+</PageState>
+
+@code {
+    private List<MessageThreadSummaryDto> threads = [];
+    private string? search;
+    private string show = "open";
+
+    private bool IsStaff => IsInAnyRole(RoleGroups.SchoolLeaders);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await LoadDataAsync();
+    }
+
+    private Task LoadDataAsync() => LoadAsync(async () =>
+        threads = await Comms.ThreadsAsync(search, show == "open" ? true : null, show == "unread"));
+
+    private async Task OnSearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await LoadDataAsync();
+    }
+}

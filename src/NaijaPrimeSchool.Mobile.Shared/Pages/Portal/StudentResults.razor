@@ -1,0 +1,21 @@
+@page "/portal/student/results"
+@attribute [Authorize(Roles = Roles.Student)]
+@inject PortalClient Portal
+
+<PageHeader Title="My results" Subtitle="Published report cards" />
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    <ReportCardList Cards="cards" />
+</PageState>
+
+@code {
+    private List<ReportCardDto> cards = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await LoadDataAsync();
+    }
+
+    private Task LoadDataAsync() => LoadAsync(async () => cards = await Portal.MyReportCardsAsync());
+}

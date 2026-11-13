@@ -1,0 +1,77 @@
+@page "/finance/online-payments"
+@attribute [Authorize(Roles = RoleGroups.Finance)]
+@inject FinanceClient Finance
+
+<PageHeader Title="Online payments" Subtitle="Paystack checkouts started by parents and students" />
+
+<div class="nps-filters">
+    <RadzenTextBox @bind-Value="search" Placeholder="Reference, pupil or payer" Style="flex:2;min-width:0" @onkeydown="OnSearchKey" />
+    <RadzenSelectBar @bind-Value="status" TValue="string" Size="ButtonSize.Small" Change="@(_ => LoadDataAsync())">
+        <Items>
+            <RadzenSelectBarItem Text="All" Value="@("")" />
+            <RadzenSelectBarItem Text="Review" Value="@("REVIEW")" />
+            <RadzenSelectBarItem Text="Pending" Value="@("PENDING")" />
+        </Items>
+    </RadzenSelectBar>
+</div>
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (items.Count == 0)
+    {
+        <EmptyState Icon="credit_card" Title="No online payments" />
+    }
+    <div class="nps-list">
+        @foreach (var p in items)
+        {
+            <div class="nps-row">
+                <div class="nps-row-main">
+                    <span class="nps-row-title">@p.StudentName · @Format.Money(p.Amount)</span>
+                    <span class="nps-row-sub">@p.InvoiceNumber · @p.PayerName · @Format.DateTime(p.CreatedOn)</span>
+                    <span class="nps-row-sub"><code>@p.Reference</code>@(p.ReceiptNumber is null ? "" : $" · receipt {p.ReceiptNumber}")</span>
+                    @if (!string.IsNullOrEmpty(p.StatusMessage))
+                    {
+                        <span class="nps-row-sub">@p.StatusMessage</span>
+                    }
+                </div>
+                <div class="nps-row-trailing">
+                    <div class="nps-right">
+                        <StatusBadge Code="@p.StatusCode" Text="@p.StatusName" />
+                        @if (p.StatusCode is "PENDING" or "ABANDONED")
+                        {
+                            <RadzenButton Text="Verify" Icon="sync" Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Light" IsBusy="Busy" Click="() => VerifyAsync(p.Reference)" />
+                        }
+                        @if (p.PaymentId is { } pid)
+                        {
+                            <a class="nps-link" href="@($"finance/payments/{pid}")">Receipt</a>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</PageState>
+
+@code {
+    private List<OnlinePaymentDto> items = [];
+    private string? search;
+    private string status = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await LoadDataAsync();
+    }
+
+    private Task LoadDataAsync() => LoadAsync(async () => items = await Finance.OnlinePaymentsAsync(search, status));
+
+    private async Task VerifyAsync(string reference)
+    {
+        if (await RunAsync(() => Finance.VerifyOnlinePaymentAsync(reference), "Checked with the payment provider."))
+            await LoadDataAsync();
+    }
+
+    private async Task OnSearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await LoadDataAsync();
+    }
+}

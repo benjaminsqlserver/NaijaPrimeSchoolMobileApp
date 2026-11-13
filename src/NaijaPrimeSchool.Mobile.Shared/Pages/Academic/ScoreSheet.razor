@@ -1,0 +1,108 @@
+@page "/assessments/{Id:guid}/scores"
+@attribute [Authorize(Roles = RoleGroups.AcademicStaff)]
+@inject ResultsClient Results
+
+<PageHeader Title="@(sheet?.Assessment.Title ?? "Score sheet")"
+            Subtitle="@(sheet is null ? null : $"{sheet.Assessment.SubjectName} · {sheet.Assessment.SchoolClassName} · out of {sheet.Assessment.MaxScore}")"
+            BackHref="assessments">
+    <Actions>
+        @if (sheet is not null)
+        {
+            @if (sheet.Assessment.IsPublished)
+            {
+                <RadzenButton Text="Unpublish" Icon="lock_open" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" IsBusy="Busy" Click="() => PublishAsync(false)" />
+            }
+            else
+            {
+                <RadzenButton Text="Publish" Icon="publish" Size="ButtonSize.Small" IsBusy="Busy" Click="() => PublishAsync(true)" />
+            }
+        }
+    </Actions>
+</PageHeader>
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (sheet is not null)
+    {
+        var locked = sheet.Assessment.IsPublished;
+        @if (locked)
+        {
+            <RadzenAlert AlertStyle="AlertStyle.Info" Shade="Shade.Lighter" AllowClose="false">Published scores are read-only. Unpublish to make changes.</RadzenAlert>
+        }
+        <div class="nps-list">
+            @foreach (var s in scores)
+            {
+                <div class="nps-row nps-score-row">
+                    <div class="nps-row-leading"><StudentAvatar PhotoUrl="@s.StudentPhotoUrl" FirstName="@s.StudentFirstName" LastName="@s.StudentLastName" /></div>
+                    <div class="nps-row-main">
+                        <span class="nps-row-title">@s.StudentName</span>
+                        <span class="nps-row-sub">@s.StudentAdmissionNumber</span>
+                    </div>
+                    <div class="nps-score-input">
+                        <RadzenNumeric TValue="decimal?" @bind-Value="s.Score" Min="0" Max="sheet.Assessment.MaxScore" Disabled="@(locked || s.IsAbsent)"
+                                       ShowUpDown="false" Placeholder="—" Change="@(_ => dirty = true)" inputmode="decimal" />
+                        <label class="nps-absent">
+                            <RadzenCheckBox @bind-Value="s.IsAbsent" Disabled="locked" Change="@((bool v) => { if (v) s.Score = null; dirty = true; })" />
+                            Abs
+                        </label>
+                    </div>
+                </div>
+            }
+        </div>
+        @if (!locked)
+        {
+            <div class="nps-sticky-actions">
+                <span class="nps-muted">@scores.Count(x => x.Score is not null || x.IsAbsent) of @scores.Count entered</span>
+                <RadzenButton Text="Save scores" Icon="save" IsBusy="Busy" Disabled="!dirty" Click="SaveAsync" />
+            </div>
+        }
+    }
+</PageState>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private AssessmentScoreSheetDto? sheet;
+    private List<AssessmentScoreDto> scores = [];
+    private bool dirty;
+
+    protected override Task OnParametersSetAsync() => LoadDataAsync();
+
+    private Task LoadDataAsync() => LoadAsync(async () =>
+    {
+        dirty = false;
+        sheet = await Results.ScoreSheetAsync(Id);
+        scores = sheet?.Scores.OrderBy(s => s.StudentLastName).ThenBy(s => s.StudentFirstName).ToList() ?? [];
+    });
+
+    private async Task SaveAsync()
+    {
+        var body = new BulkSetScoresRequest
+        {
+            TermAssessmentId = Id,
+            Scores = scores
+                .Where(s => s.Score is not null || s.IsAbsent || s.Id != Guid.Empty)
+                .Select(s => new UpsertAssessmentScoreRequest
+                {
+                    Id = s.Id == Guid.Empty ? null : s.Id,
+                    TermAssessmentId = Id,
+                    StudentId = s.StudentId,
+                    Score = s.IsAbsent ? null : s.Score,
+                    IsAbsent = s.IsAbsent,
+                    Remarks = s.Remarks,
+                }).ToList(),
+        };
+        if (await RunAsync(() => Results.SaveScoresAsync(Id, body), "Scores saved."))
+            await LoadDataAsync();
+    }
+
+    private async Task PublishAsync(bool publish)
+    {
+        if (dirty && publish)
+        {
+            Error("Save your changes before publishing.");
+            return;
+        }
+        if (await RunAsync(() => Results.PublishAssessmentAsync(Id, publish), publish ? "Assessment published." : "Assessment unpublished."))
+            await LoadDataAsync();
+    }
+}

@@ -1,0 +1,155 @@
+@page "/attendance/daily"
+@attribute [Authorize(Roles = RoleGroups.AcademicStaff)]
+@inject AttendanceClient Attendance
+@inject LookupClient Lookups
+
+<PageHeader Title="Daily register" Subtitle="Morning roll call for a class" />
+
+<ClassTermPicker @bind-ClassId="classId" ShowTerm="false" CurrentUserId="CurrentUserId" OnChanged="LoadDataAsync">
+    <RadzenDatePicker TValue="DateOnly" @bind-Value="date" @bind-Value:after="LoadDataAsync"
+                      DateFormat="ddd d MMM" Max="DateTime.Today" Style="flex:1;min-width:8rem" />
+</ClassTermPicker>
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (classId is null)
+    {
+        <EmptyState Icon="class" Title="Choose a class" />
+    }
+    else if (detail is null)
+    {
+        <EmptyState Icon="fact_check" Title="No register for this day yet"
+                    Message="Opening the register lists every pupil enrolled in the class on this date, marked present.">
+            <RadzenButton Text="Open register" Icon="playlist_add_check" IsBusy="Busy" Click="OpenAsync" />
+        </EmptyState>
+    }
+    else
+    {
+        var reg = detail.Register;
+        <div class="nps-card nps-register-head">
+            <div>
+                <strong>@reg.SchoolClassName · @Format.Date(reg.Date)</strong>
+                <small class="nps-muted">@reg.TermName · taken by @(reg.TakenByName ?? "—")</small>
+            </div>
+            @if (reg.IsSubmitted)
+            {
+                <StatusBadge Code="CONFIRMED" Text="@($"Submitted {Format.DateTime(reg.SubmittedOn)}")" />
+            }
+            else
+            {
+                <StatusBadge Code="DRAFT" Text="Not submitted" />
+            }
+        </div>
+
+        <AttendanceMarker Rows="rows" Statuses="statuses" ReadOnly="reg.IsSubmitted" OnChanged="() => dirty = true" />
+
+        <div class="nps-sticky-actions">
+            @if (reg.IsSubmitted)
+            {
+                <RadzenButton Text="Reopen to edit" Icon="lock_open" ButtonStyle="ButtonStyle.Light" IsBusy="Busy" Click="ReopenAsync" />
+            }
+            else
+            {
+                <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Outlined" IsBusy="Busy" Click="DeleteAsync" aria-label="Delete register" />
+                <RadzenButton Text="Save" Icon="save" ButtonStyle="ButtonStyle.Light" IsBusy="Busy" Disabled="!dirty" Click="() => SaveAsync(true)" />
+                <RadzenButton Text="Submit" Icon="task_alt" IsBusy="Busy" Click="SubmitAsync" />
+            }
+        </div>
+    }
+</PageState>
+
+@code {
+    private Guid? classId;
+    private DateOnly date = DateOnly.FromDateTime(DateTime.Today);
+    private DailyAttendanceRegisterDetailDto? detail;
+    private List<AttendanceMarker.MarkRow> rows = [];
+    private List<LookupDto> statuses = [];
+    private bool dirty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        try { statuses = await Lookups.GetAsync(LookupClient.AttendanceStatuses); }
+        catch (ApiException ex) { LoadError = ex.Message; }
+        Loading = false;
+    }
+
+    private Task LoadDataAsync() => LoadAsync(async () =>
+    {
+        dirty = false;
+        detail = classId is { } c ? await Attendance.DailyAsync(c, date) : null;
+        rows = detail?.Entries
+            .OrderBy(e => e.StudentLastName).ThenBy(e => e.StudentFirstName)
+            .Select(e => new AttendanceMarker.MarkRow
+            {
+                EntryId = e.Id,
+                StudentId = e.StudentId,
+                Name = e.StudentName,
+                AdmissionNumber = e.StudentAdmissionNumber,
+                FirstName = e.StudentFirstName,
+                LastName = e.StudentLastName,
+                PhotoUrl = e.StudentPhotoUrl,
+                StatusId = e.AttendanceStatusId,
+                ArrivalTime = e.ArrivalTime,
+                Remarks = e.Remarks,
+            }).ToList() ?? [];
+    });
+
+    private async Task OpenAsync()
+    {
+        if (classId is not { } c) return;
+        var result = await RunAsync(() => Attendance.OpenDailyAsync(c, date), "Register opened.");
+        if (result.Succeeded) await LoadDataAsync();
+    }
+
+    private async Task<bool> SaveAsync(bool reload)
+    {
+        if (detail is null) return false;
+        var id = detail.Register.Id;
+        var ok = await RunAsync(() => Attendance.SaveDailyAsync(id, new BulkSetDailyAttendanceRequest
+        {
+            RegisterId = id,
+            Entries = rows.Select(r => new UpsertDailyEntryRequest
+            {
+                Id = r.EntryId,
+                RegisterId = id,
+                StudentId = r.StudentId,
+                AttendanceStatusId = r.StatusId,
+                ArrivalTime = r.ArrivalTime,
+                Remarks = r.Remarks,
+            }).ToList(),
+        }), reload ? "Register saved." : null);
+        if (ok)
+        {
+            dirty = false;
+            if (reload) await LoadDataAsync();
+        }
+        return ok;
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (detail is null) return;
+        if (!await ConfirmAsync("Submit this register? It becomes read-only until reopened.", "Submit register", "Submit")) return;
+        if (dirty && !await SaveAsync(false)) return;
+        var id = detail.Register.Id;
+        if (await RunAsync(() => Attendance.SubmitDailyAsync(id), "Register submitted."))
+            await LoadDataAsync();
+    }
+
+    private async Task ReopenAsync()
+    {
+        if (detail is null) return;
+        var id = detail.Register.Id;
+        if (await RunAsync(() => Attendance.ReopenDailyAsync(id), "Register reopened."))
+            await LoadDataAsync();
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (detail is null) return;
+        if (!await ConfirmAsync("Delete this register? It is soft-deleted and kept in the audit trail.", "Delete register", "Delete")) return;
+        var id = detail.Register.Id;
+        if (await RunAsync(() => Attendance.DeleteDailyAsync(id), "Register deleted."))
+            await LoadDataAsync();
+    }
+}

@@ -1,0 +1,174 @@
+@page "/finance/payments/new"
+@attribute [Authorize(Roles = RoleGroups.Finance)]
+@inject FinanceClient Finance
+@inject LookupClient Lookups
+
+<PageHeader Title="Record payment" Subtitle="Cash, POS, transfer or cheque received at the bursary" BackHref="finance/payments" />
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="InitAsync">
+    <div class="nps-card nps-form">
+        <div class="nps-field">
+            <label>Pupil</label>
+            <RadzenDropDown TValue="Guid?" @bind-Value="studentId" Data="students" TextProperty="Name" ValueProperty="Id"
+                            AllowFiltering="true" FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive" LoadData="SearchStudentsAsync"
+                            Placeholder="Type a name or admission number" Change="@(_ => LoadLedgerAsync())" Style="width:100%" />
+        </div>
+
+        @if (ledger is not null)
+        {
+            <div class="nps-inline-stat">
+                <StudentAvatar PhotoUrl="@ledger.StudentPhotoUrl" FirstName="@ledger.StudentFirstName" LastName="@ledger.StudentLastName" Size="medium" />
+                <div>
+                    <strong>@ledger.StudentName</strong>
+                    <small class="nps-muted">Outstanding @Format.Money(ledger.OutstandingBalance)</small>
+                </div>
+            </div>
+
+            <div class="nps-two">
+                <div class="nps-field">
+                    <label>Amount received (₦)</label>
+                    <RadzenNumeric TValue="decimal" @bind-Value="amount" Min="0" Format="#,##0.00" ShowUpDown="false" Change="@(_ => AutoAllocate())" Style="width:100%" />
+                </div>
+                <div class="nps-field">
+                    <label>Date</label>
+                    <RadzenDatePicker TValue="DateOnly" @bind-Value="paidOn" DateFormat="d MMM yyyy" Max="DateTime.Today" Style="width:100%" />
+                </div>
+            </div>
+            <div class="nps-two">
+                <div class="nps-field">
+                    <label>Method</label>
+                    <RadzenDropDown TValue="Guid?" @bind-Value="methodId" Data="methods" TextProperty="Name" ValueProperty="Id" Style="width:100%" />
+                </div>
+                <div class="nps-field">
+                    <label>Reference</label>
+                    <RadzenTextBox @bind-Value="reference" MaxLength="120" Placeholder="POS / teller / cheque no." Style="width:100%" />
+                </div>
+            </div>
+            <div class="nps-field">
+                <label>Notes</label>
+                <RadzenTextBox @bind-Value="notes" MaxLength="300" Style="width:100%" />
+            </div>
+
+            <h3 class="nps-section-title">Apply to invoices</h3>
+            @if (open.Count == 0)
+            {
+                <EmptyState Icon="task_alt" Title="No unpaid invoices" Message="The payment will be recorded as unallocated credit." />
+            }
+            <div class="nps-list">
+                @foreach (var line in open)
+                {
+                    <div class="nps-row">
+                        <div class="nps-row-main">
+                            <span class="nps-row-title">@line.Invoice.InvoiceNumber</span>
+                            <span class="nps-row-sub">@line.Invoice.TermName · balance @Format.Money(line.Invoice.Balance)</span>
+                        </div>
+                        <div class="nps-alloc">
+                            <RadzenNumeric TValue="decimal" @bind-Value="line.Apply" Min="0" Max="line.Invoice.Balance" Format="#,##0.00" ShowUpDown="false" />
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="nps-register-tools">
+                <span class="@(Allocated > amount ? "nps-danger" : "nps-muted")">Allocated @Format.Money(Allocated) of @Format.Money(amount)</span>
+                <RadzenButton Text="Auto-allocate" Icon="auto_fix_high" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.ExtraSmall" Click="AutoAllocate" />
+            </div>
+
+            <RadzenButton Text="@($"Record {Format.Money(amount)}")" Icon="save" IsBusy="Busy" Click="SaveAsync" Size="ButtonSize.Large" Style="width:100%"
+                          Disabled="@(amount <= 0 || methodId is null || Allocated > amount)" />
+        }
+    </div>
+</PageState>
+
+@code {
+    private sealed class OpenInvoice(InvoiceDto invoice)
+    {
+        public InvoiceDto Invoice { get; } = invoice;
+        public decimal Apply { get; set; }
+    }
+
+    [SupplyParameterFromQuery(Name = "studentId")] public Guid? StudentParam { get; set; }
+
+    private List<LookupDto> students = [];
+    private List<LookupDto> methods = [];
+    private Guid? studentId;
+    private StudentLedgerDto? ledger;
+    private List<OpenInvoice> open = [];
+    private decimal amount;
+    private DateOnly paidOn = DateOnly.FromDateTime(DateTime.Today);
+    private Guid? methodId;
+    private string? reference;
+    private string? notes;
+
+    private decimal Allocated => open.Sum(o => o.Apply);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await InitAsync();
+    }
+
+    private Task InitAsync() => LoadAsync(async () =>
+    {
+        // Online payments are recorded by the gateway confirmation, never by hand.
+        methods = (await Lookups.GetAsync(LookupClient.PaymentMethods)).Where(m => m.Code != "ONL").ToList();
+        methodId ??= methods.FirstOrDefault()?.Id;
+        if (StudentParam is { } sid)
+        {
+            studentId = sid;
+            await LoadLedgerCoreAsync();
+            if (ledger is not null) students = [new LookupDto { Id = sid, Name = $"{ledger.StudentName} ({ledger.StudentAdmissionNumber})" }];
+        }
+    });
+
+    private async Task SearchStudentsAsync(LoadDataArgs args)
+    {
+        if (string.IsNullOrWhiteSpace(args.Filter) || args.Filter.Length < 2) return;
+        try { students = await Lookups.SearchAsync(LookupClient.Students, args.Filter); }
+        catch (ApiException ex) { Error(ex.Message); }
+    }
+
+    private Task LoadLedgerAsync() => LoadAsync(LoadLedgerCoreAsync);
+
+    private async Task LoadLedgerCoreAsync()
+    {
+        ledger = studentId is { } id ? await Finance.LedgerAsync(id) : null;
+        open = ledger?.Invoices
+            .Where(i => i.Balance > 0 && i.InvoiceStatusCode != "CANCELLED")
+            .OrderBy(i => i.IssuedOn)
+            .Select(i => new OpenInvoice(i))
+            .ToList() ?? [];
+        amount = open.Sum(o => o.Invoice.Balance);
+        AutoAllocate();
+    }
+
+    // Oldest invoice first, like the web app's auto-allocate.
+    private void AutoAllocate()
+    {
+        var left = amount;
+        foreach (var o in open)
+        {
+            o.Apply = Math.Min(left, o.Invoice.Balance);
+            left -= o.Apply;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (studentId is not { } sid || methodId is not { } mid) return;
+        var request = new RecordPaymentRequest
+        {
+            StudentId = sid,
+            PaymentMethodId = mid,
+            PaidOn = paidOn,
+            Amount = amount,
+            Reference = reference,
+            Notes = notes,
+            Allocations = open.Where(o => o.Apply > 0)
+                .Select(o => new AllocationLineRequest { InvoiceId = o.Invoice.Id, AmountApplied = o.Apply })
+                .ToList(),
+        };
+        var result = await RunAsync(() => Finance.RecordPaymentAsync(request), "Payment recorded.");
+        if (result is { Succeeded: true, Data: { } created })
+            Nav.NavigateTo($"finance/payments/{created.Id}", replace: true);
+    }
+}

@@ -1,0 +1,65 @@
+@page "/users/{Id:guid}"
+@attribute [Authorize(Roles = RoleGroups.UserAdmins)]
+@inject UserClient UsersApi
+
+<PageHeader Title="@(user?.FullName ?? "User")" Subtitle="@user?.UserName" BackHref="users" />
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (user is null)
+    {
+        <EmptyState Icon="person_off" Title="User not found" />
+    }
+    else
+    {
+        <div class="nps-card">
+            <dl class="nps-dl">
+                <dt>Email</dt><dd>@user.Email</dd>
+                <dt>Phone</dt><dd>@(user.PhoneNumber ?? "—")</dd>
+                <dt>Roles</dt><dd>@string.Join(", ", user.Roles)</dd>
+                <dt>Created</dt><dd>@Format.Date(user.CreatedOn)</dd>
+                <dt>Status</dt><dd><StatusBadge Code="@(user.IsActive ? "ACTIVE" : "INACTIVE")" Text="@(user.IsActive ? "Active" : "Inactive")" /></dd>
+            </dl>
+        </div>
+
+        <div class="nps-card nps-form">
+            @if (user.IsActive)
+            {
+                <h3>Deactivate account</h3>
+                <p class="nps-muted">The user is signed out of the web portal and the mobile app within a minute and cannot sign in again until reactivated.</p>
+                <div class="nps-field">
+                    <label>Reason</label>
+                    <RadzenTextBox @bind-Value="reason" MaxLength="300" Style="width:100%" />
+                </div>
+                <RadzenButton Text="Deactivate" Icon="person_off" ButtonStyle="ButtonStyle.Danger" IsBusy="Busy"
+                              Disabled="@(user.Id == CurrentUserId)" Click="() => SetActiveAsync(false)" />
+                @if (user.Id == CurrentUserId)
+                {
+                    <small class="nps-muted">You cannot deactivate your own account.</small>
+                }
+            }
+            else
+            {
+                <h3>Reactivate account</h3>
+                <RadzenButton Text="Activate" Icon="person" IsBusy="Busy" Click="() => SetActiveAsync(true)" />
+            }
+        </div>
+        <small class="nps-muted">Creating users, editing profiles, roles and password resets are done on the web portal.</small>
+    }
+</PageState>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private UserDto? user;
+    private string? reason;
+
+    protected override Task OnParametersSetAsync() => LoadDataAsync();
+
+    private Task LoadDataAsync() => LoadAsync(async () => user = await UsersApi.UserAsync(Id));
+
+    private async Task SetActiveAsync(bool active)
+    {
+        if (!active && !await ConfirmAsync($"Deactivate {user?.FullName}?", "Deactivate", "Deactivate")) return;
+        if (await RunAsync(() => UsersApi.SetActiveAsync(Id, active, reason), active ? "Account activated." : "Account deactivated."))
+            await LoadDataAsync();
+    }
+}

@@ -1,0 +1,98 @@
+@page "/students/{Id:guid}"
+@attribute [Authorize(Roles = RoleGroups.SchoolLeaders)]
+@inject FamilyClient Family
+
+<PageHeader Title="@(student?.FullName ?? "Student")" Subtitle="@student?.AdmissionNumber" BackHref="students" />
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (student is null)
+    {
+        <EmptyState Icon="boy" Title="Student not found" Message="The record may have been deleted." />
+    }
+    else
+    {
+        <div class="nps-card nps-profile">
+            <StudentAvatar PhotoUrl="@student.PhotoUrl" FirstName="@student.FirstName" LastName="@student.LastName" Size="large" />
+            <div>
+                <h2>@student.FullName</h2>
+                <p class="nps-muted">@(student.CurrentClassName ?? "Not enrolled") · @student.CurrentSessionName</p>
+                <StatusBadge Code="@(student.IsActive ? "ACTIVE" : "INACTIVE")" Text="@(student.IsActive ? "Active" : "Inactive")" />
+            </div>
+        </div>
+
+        <div class="nps-tiles">
+            <a class="nps-tile" href="@($"portal/students/{Id}?tab=1")"><span class="rzi">description</span>Report cards</a>
+            <a class="nps-tile" href="@($"portal/students/{Id}?tab=2")"><span class="rzi">payments</span>Fees</a>
+            <a class="nps-tile" href="@($"portal/students/{Id}")"><span class="rzi">event_available</span>Attendance</a>
+        </div>
+
+        <h3 class="nps-section-title">Details</h3>
+        <dl class="nps-dl nps-card">
+            <dt>Admitted</dt><dd>@Format.Date(student.AdmissionDate)</dd>
+            <dt>Date of birth</dt><dd>@Format.Date(student.DateOfBirth)</dd>
+            <dt>Gender</dt><dd>@(student.GenderName ?? "—")</dd>
+            <dt>Blood group</dt><dd>@(student.BloodGroupName ?? "—")</dd>
+            <dt>State of origin</dt><dd>@(student.StateOfOrigin ?? "—")</dd>
+            <dt>Address</dt><dd>@(student.ResidentialAddress ?? "—")</dd>
+            <dt>Allergies</dt><dd>@(student.Allergies ?? "None recorded")</dd>
+            <dt>Medical notes</dt><dd>@(student.MedicalNotes ?? "—")</dd>
+        </dl>
+
+        <h3 class="nps-section-title">Parents & guardians</h3>
+        @if (parents.Count == 0)
+        {
+            <EmptyState Icon="family_restroom" Title="No parents linked" />
+        }
+        <div class="nps-list">
+            @foreach (var p in parents)
+            {
+                <ListRow Href="@($"parents/{p.ParentId}")" Title="@p.ParentName"
+                         Subtitle="@($"{p.RelationshipName}{(p.CanPickUp ? " · can pick up" : "")}")">
+                    <Trailing>
+                        <div class="nps-right">
+                            @if (p.IsPrimaryContact) { <StatusBadge Code="ACTIVE" Text="Primary" /> }
+                            @if (!string.IsNullOrEmpty(p.ParentPhone)) { <small class="nps-muted">@p.ParentPhone</small> }
+                        </div>
+                    </Trailing>
+                </ListRow>
+            }
+        </div>
+
+        <div class="nps-danger-zone">
+            <RadzenButton Text="@(student.IsActive ? "Deactivate" : "Activate")" Icon="@(student.IsActive ? "person_off" : "person")"
+                          ButtonStyle="ButtonStyle.Light" IsBusy="Busy" Click="ToggleActiveAsync" />
+            <RadzenButton Text="Delete" Icon="delete" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Outlined" IsBusy="Busy" Click="DeleteAsync" />
+        </div>
+        <small class="nps-muted">Profile edits and photos are managed on the web portal.</small>
+    }
+</PageState>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private StudentDto? student;
+    private List<StudentParentDto> parents = [];
+
+    protected override Task OnParametersSetAsync() => LoadDataAsync();
+
+    private Task LoadDataAsync() => LoadAsync(async () =>
+    {
+        student = await Family.StudentAsync(Id);
+        parents = student is null ? [] : await Family.StudentParentsAsync(Id);
+    });
+
+    private async Task ToggleActiveAsync()
+    {
+        if (student is null) return;
+        var activate = !student.IsActive;
+        if (await RunAsync(() => Family.SetStudentActiveAsync(Id, activate), activate ? "Student activated." : "Student deactivated."))
+            await LoadDataAsync();
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (!await ConfirmAsync("Delete this student? The record is soft-deleted (hidden, kept for audit). It is refused while an enrolment is still open.", "Delete student", "Delete"))
+            return;
+        if (await RunAsync(() => Family.DeleteStudentAsync(Id), "Student deleted."))
+            Nav.NavigateTo("students", replace: true);
+    }
+}

@@ -1,0 +1,170 @@
+@page "/manage/announcements/new"
+@page "/manage/announcements/{Id:guid}"
+@attribute [Authorize(Roles = RoleGroups.SchoolLeaders)]
+@inject CommsClient Comms
+@inject LookupClient Lookups
+
+<PageHeader Title="@(Id is null ? "New announcement" : "Edit announcement")" BackHref="manage/announcements">
+    <Actions>
+        @if (existing is not null)
+        {
+            @if (existing.IsPublished)
+            {
+                <RadzenButton Text="Unpublish" Icon="unpublished" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" IsBusy="Busy" Click="() => PublishAsync(false)" />
+            }
+            else
+            {
+                <RadzenButton Text="Publish" Icon="publish" Size="ButtonSize.Small" IsBusy="Busy" Click="() => PublishAsync(true)" />
+            }
+            <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Outlined" Size="ButtonSize.Small" IsBusy="Busy" Click="DeleteAsync" aria-label="Delete" />
+        }
+    </Actions>
+</PageHeader>
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (existing is { IsPublished: true })
+    {
+        <RadzenAlert AlertStyle="AlertStyle.Info" Shade="Shade.Lighter" AllowClose="false">
+            Published @Format.DateTime(existing.PublishedOn) · read by @existing.ReadCount ·
+            reminders: @existing.Notifications.Sent sent, @existing.Notifications.Pending pending, @existing.Notifications.Failed failed.
+        </RadzenAlert>
+    }
+    <div class="nps-card">
+        <EditForm Model="model" OnValidSubmit="SaveAsync" class="nps-form">
+            <div class="nps-field">
+                <label>Title</label>
+                <RadzenTextBox @bind-Value="model.Title" MaxLength="200" Style="width:100%" />
+            </div>
+            <div class="nps-field">
+                <label>Message</label>
+                <RadzenTextArea @bind-Value="model.Body" Rows="7" Style="width:100%" />
+            </div>
+            <div class="nps-two">
+                <div class="nps-field">
+                    <label>Category</label>
+                    <RadzenDropDown @bind-Value="model.CategoryId" Data="categories" TextProperty="Name" ValueProperty="Id" Style="width:100%" />
+                </div>
+                <div class="nps-field">
+                    <label>Audience</label>
+                    <RadzenDropDown @bind-Value="model.AudienceId" Data="audiences" TextProperty="Name" ValueProperty="Id" Style="width:100%" />
+                </div>
+            </div>
+            @if (NeedsClass)
+            {
+                <div class="nps-field">
+                    <label>Class</label>
+                    <RadzenDropDown @bind-Value="model.TargetSchoolClassId" Data="classes" TextProperty="Name" ValueProperty="Id" Style="width:100%" />
+                </div>
+            }
+            <div class="nps-two">
+                <div class="nps-field">
+                    <label>Expires on (optional)</label>
+                    <RadzenDatePicker TValue="DateOnly?" @bind-Value="model.ExpiresOn" DateFormat="d MMM yyyy" AllowClear="true" Style="width:100%" />
+                </div>
+                <div class="nps-field nps-field-inline">
+                    <RadzenCheckBox @bind-Value="model.IsPinned" Name="pinned" />
+                    <RadzenLabel Text="Pin to top" Component="pinned" />
+                </div>
+            </div>
+            @if (Id is null)
+            {
+                <div class="nps-field nps-field-inline">
+                    <RadzenCheckBox @bind-Value="model.PublishImmediately" Name="publishNow" />
+                    <RadzenLabel Text="Publish immediately (queues email / SMS reminders)" Component="publishNow" />
+                </div>
+            }
+            <RadzenButton ButtonType="ButtonType.Submit" Text="Save" Icon="save" IsBusy="Busy"
+                          Disabled="@(string.IsNullOrWhiteSpace(model.Title) || string.IsNullOrWhiteSpace(model.Body) || model.CategoryId == Guid.Empty || model.AudienceId == Guid.Empty)" />
+        </EditForm>
+    </div>
+</PageState>
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+
+    private AnnouncementDto? existing;
+    private CreateAnnouncementRequest model = new();
+    private List<LookupDto> categories = [];
+    private List<LookupDto> audiences = [];
+    private List<LookupDto> classes = [];
+
+    // Audience rows are lookup data; the class picker shows for the one
+    // whose code marks it as class-targeted (the web app's "CLASS" audience).
+    private bool NeedsClass => audiences.FirstOrDefault(a => a.Id == model.AudienceId)?.Code == "CLASS";
+
+    protected override Task OnParametersSetAsync() => LoadDataAsync();
+
+    private Task LoadDataAsync() => LoadAsync(async () =>
+    {
+        categories = await Lookups.GetAsync(LookupClient.AnnouncementCategories);
+        audiences = await Lookups.GetAsync(LookupClient.AnnouncementAudiences);
+        classes = await Lookups.GetAsync(LookupClient.Classes);
+
+        if (Id is { } id)
+        {
+            existing = await Comms.AnnouncementAsync(id);
+            if (existing is not null)
+            {
+                model = new CreateAnnouncementRequest
+                {
+                    Title = existing.Title,
+                    Body = existing.Body,
+                    CategoryId = existing.CategoryId,
+                    AudienceId = existing.AudienceId,
+                    TargetSchoolClassId = existing.TargetSchoolClassId,
+                    ExpiresOn = existing.ExpiresOn,
+                    IsPinned = existing.IsPinned,
+                };
+            }
+        }
+        else
+        {
+            model.CategoryId = categories.FirstOrDefault()?.Id ?? Guid.Empty;
+            model.AudienceId = audiences.FirstOrDefault()?.Id ?? Guid.Empty;
+        }
+    });
+
+    private async Task SaveAsync()
+    {
+        if (!NeedsClass) model.TargetSchoolClassId = null;
+
+        if (Id is { } id)
+        {
+            if (await RunAsync(() => Comms.UpdateAnnouncementAsync(new UpdateAnnouncementRequest
+                {
+                    Id = id,
+                    Title = model.Title,
+                    Body = model.Body,
+                    CategoryId = model.CategoryId,
+                    AudienceId = model.AudienceId,
+                    TargetSchoolClassId = model.TargetSchoolClassId,
+                    ExpiresOn = model.ExpiresOn,
+                    IsPinned = model.IsPinned,
+                }), "Announcement saved."))
+                await LoadDataAsync();
+            return;
+        }
+
+        var created = await RunAsync(() => Comms.CreateAnnouncementAsync(model), "Announcement created.");
+        if (created is { Succeeded: true, Data: { } c })
+            Nav.NavigateTo($"manage/announcements/{c.Id}", replace: true);
+    }
+
+    private async Task PublishAsync(bool publish)
+    {
+        if (Id is not { } id) return;
+        if (publish && !await ConfirmAsync("Publish this notice? Families in the audience will see it now and get an email / SMS reminder if they don't read it.", "Publish", "Publish"))
+            return;
+        if (await RunAsync(() => Comms.PublishAnnouncementAsync(id, publish), publish ? "Published." : "Unpublished."))
+            await LoadDataAsync();
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (Id is not { } id) return;
+        if (!await ConfirmAsync("Delete this announcement? It is archived (soft-deleted), not erased, and stays in the audit log.", "Delete", "Delete"))
+            return;
+        if (await RunAsync(() => Comms.DeleteAnnouncementAsync(id), "Announcement deleted."))
+            Nav.NavigateTo("manage/announcements", replace: true);
+    }
+}

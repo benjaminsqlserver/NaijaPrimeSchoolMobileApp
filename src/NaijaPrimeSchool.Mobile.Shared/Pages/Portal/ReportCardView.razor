@@ -1,0 +1,117 @@
+@page "/portal/report-cards/{Id:guid}"
+@attribute [Authorize(Roles = RoleGroups.PortalViewers)]
+@inject PortalClient Portal
+@inject ResultsClient Results
+
+<PageHeader Title="Report card" Subtitle="@(card is null ? null : $"{card.Card.TermName} · {card.Card.SessionName}")" BackHref="@BackHref">
+    <Actions>
+        @if (card is not null && IsLeader)
+        {
+            @if (card.Card.IsPublished)
+            {
+                <RadzenButton Text="Unpublish" Icon="unpublished" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" IsBusy="Busy" Click="() => PublishAsync(false)" />
+            }
+            else
+            {
+                <RadzenButton Text="Publish" Icon="publish" Size="ButtonSize.Small" IsBusy="Busy" Click="() => PublishAsync(true)" />
+            }
+        }
+    </Actions>
+</PageHeader>
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (card is null)
+    {
+        <EmptyState Icon="description" Title="Report card not available" Message="It may not have been published yet." />
+    }
+    else
+    {
+        var c = card.Card;
+        <div class="nps-card nps-profile">
+            <StudentAvatar PhotoUrl="@c.StudentPhotoUrl" FirstName="@c.StudentFirstName" LastName="@c.StudentLastName" Size="large" />
+            <div>
+                <h2>@c.StudentName</h2>
+                <p class="nps-muted">@c.StudentAdmissionNumber · @c.SchoolClassName</p>
+                @if (!c.IsPublished)
+                {
+                    <StatusBadge Code="DRAFT" Text="Not published" />
+                }
+            </div>
+        </div>
+
+        <div class="nps-stats">
+            <StatTile Icon="percent" Label="Average" Value="@Format.Percent(c.AveragePercentage)" />
+            <StatTile Icon="military_tech" Label="Position" Value="@(c.Position is null ? "—" : $"{c.Position} / {c.StudentsInClass}")" Tone="amber" />
+            <StatTile Icon="event_available" Label="Days present" Value="@($"{c.DaysPresent} / {c.TotalSchoolDays}")" Tone="blue" />
+        </div>
+
+        <h3 class="nps-section-title">Subjects</h3>
+        <div class="nps-list">
+            @foreach (var r in card.Results.OrderBy(r => r.SubjectName))
+            {
+                <ListRow Title="@r.SubjectName" Subtitle="@(r.TeacherComment ?? r.GradeBandRemark)">
+                    <Leading><span class="nps-code">@r.SubjectCode</span></Leading>
+                    <Trailing>
+                        <div class="nps-right">
+                            <strong>@Format.Percent(r.Percentage)</strong>
+                            <small class="nps-muted">Grade @(r.GradeBandName ?? "—")@(r.Position is null ? "" : $" · pos {r.Position}")</small>
+                        </div>
+                    </Trailing>
+                </ListRow>
+            }
+        </div>
+
+        @if (card.AffectiveRatings.Count > 0)
+        {
+            <h3 class="nps-section-title">Affective traits</h3>
+            <div class="nps-card nps-ratings">
+                @foreach (var a in card.AffectiveRatings)
+                {
+                    <div><span>@a.AffectiveTraitName</span><RadzenRating Value="a.TraitRatingValue" ReadOnly="true" Stars="5" /></div>
+                }
+            </div>
+        }
+        @if (card.PsychomotorRatings.Count > 0)
+        {
+            <h3 class="nps-section-title">Psychomotor skills</h3>
+            <div class="nps-card nps-ratings">
+                @foreach (var p in card.PsychomotorRatings)
+                {
+                    <div><span>@p.PsychomotorSkillName</span><RadzenRating Value="p.TraitRatingValue" ReadOnly="true" Stars="5" /></div>
+                }
+            </div>
+        }
+
+        <h3 class="nps-section-title">Comments</h3>
+        <div class="nps-card">
+            <dl class="nps-dl">
+                <dt>Class teacher</dt><dd>@(c.ClassTeacherComment ?? "—")</dd>
+                <dt>Head teacher</dt><dd>@(c.HeadTeacherComment ?? "—")</dd>
+                <dt>Next term begins</dt><dd>@Format.Date(c.NextTermBegins)</dd>
+            </dl>
+        </div>
+    }
+</PageState>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private ReportCardDetailDto? card;
+
+    private bool IsLeader => IsInAnyRole(RoleGroups.SchoolLeaders);
+
+    private string BackHref =>
+        CurrentUser.IsInRole(Roles.Student) && !IsLeader ? "portal/student/results"
+        : card is null ? ""
+        : IsLeader ? "report-cards"
+        : $"portal/students/{card.Card.StudentId}?tab=1";
+
+    protected override Task OnParametersSetAsync() => LoadDataAsync();
+
+    private Task LoadDataAsync() => LoadAsync(async () => card = await Portal.ReportCardAsync(Id));
+
+    private async Task PublishAsync(bool publish)
+    {
+        if (await RunAsync(() => Results.PublishReportCardAsync(Id, publish), publish ? "Report card published." : "Report card unpublished."))
+            await LoadDataAsync();
+    }
+}

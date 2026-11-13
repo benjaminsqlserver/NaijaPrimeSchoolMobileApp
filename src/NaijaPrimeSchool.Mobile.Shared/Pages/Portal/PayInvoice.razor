@@ -1,0 +1,119 @@
+@page "/portal/pay/{InvoiceId:guid}"
+@attribute [Authorize(Roles = RoleGroups.Family)]
+@inject PortalClient Portal
+@inject IPlatformService Platform
+
+<PageHeader Title="Pay fees online" Subtitle="@invoice?.Detail.Invoice.InvoiceNumber" BackHref="@BackHref" />
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (invoice is null)
+    {
+        <EmptyState Icon="request_quote" Title="Invoice not available" />
+    }
+    else if (!invoice.Settings.Enabled)
+    {
+        <EmptyState Icon="credit_card_off" Title="Online payment is not available" Message="Please pay at the school's bursary." />
+    }
+    else
+    {
+        var inv = invoice.Detail.Invoice;
+        <div class="nps-card">
+            <h2>@inv.StudentName</h2>
+            <p class="nps-muted">@inv.TermName · @inv.SessionName · @inv.SchoolClassName</p>
+            <div class="nps-list">
+                @foreach (var line in invoice.Detail.Lines)
+                {
+                    <ListRow Title="@line.Description" Subtitle="@line.FeeCategoryName">
+                        <Trailing><span class="nps-amount">@Format.Money(line.LineTotal)</span></Trailing>
+                    </ListRow>
+                }
+            </div>
+            <dl class="nps-dl">
+                <dt>Amount due</dt><dd>@Format.Money(inv.AmountDue)</dd>
+                <dt>Already paid</dt><dd>@Format.Money(inv.AmountPaid)</dd>
+                <dt>Balance</dt><dd><strong>@Format.Money(inv.Balance)</strong></dd>
+            </dl>
+        </div>
+
+        @if (reference is null)
+        {
+            <div class="nps-card">
+                @if (inv.Balance <= 0)
+                {
+                    <RadzenAlert AlertStyle="AlertStyle.Success" Shade="Shade.Lighter" AllowClose="false">This invoice is fully paid.</RadzenAlert>
+                }
+                else
+                {
+                    <div class="nps-field">
+                        <label>Amount to pay (₦)</label>
+                        <RadzenNumeric TValue="decimal" @bind-Value="amount" Min="invoice.MinimumAmount" Max="inv.Balance" Format="#,##0.00" Style="width:100%" />
+                        <small class="nps-muted">Between @Format.Money(invoice.MinimumAmount) and @Format.Money(inv.Balance). Paid securely via @invoice.Settings.ProviderName (card, bank transfer or USSD).</small>
+                    </div>
+                    <RadzenButton Text="@($"Pay {Format.Money(amount)}")" Icon="lock" IsBusy="Busy" BusyText="Opening checkout…" Click="StartAsync"
+                                  Size="ButtonSize.Large" Style="width:100%" Disabled="@(amount < invoice.MinimumAmount || amount > inv.Balance)" />
+                }
+            </div>
+        }
+        else
+        {
+            <div class="nps-card">
+                <h3>Complete the payment in your browser</h3>
+                <p>We opened the secure checkout page. When you have finished, come back here and check the status.</p>
+                <p class="nps-muted">Reference: <code>@reference</code></p>
+                @if (status is not null)
+                {
+                    <RadzenAlert AlertStyle="@(status.StatusCode == "SUCCEEDED" ? AlertStyle.Success : AlertStyle.Info)" Shade="Shade.Lighter" AllowClose="false">
+                        @status.StatusName@(status.ReceiptNumber is null ? "" : $" · receipt {status.ReceiptNumber}")
+                        @if (!string.IsNullOrEmpty(status.StatusMessage)) { <br /><small>@status.StatusMessage</small> }
+                    </RadzenAlert>
+                }
+                <div class="nps-inline-actions">
+                    <RadzenButton Text="Check payment status" Icon="refresh" IsBusy="Busy" Click="CheckAsync" />
+                    <RadzenButton Text="Open checkout again" Icon="open_in_new" ButtonStyle="ButtonStyle.Light" Click="() => Platform.OpenExternalAsync(checkoutUrl!)" />
+                </div>
+            </div>
+        }
+    }
+</PageState>
+
+@code {
+    [Parameter] public Guid InvoiceId { get; set; }
+
+    private PortalInvoiceDto? invoice;
+    private decimal amount;
+    private string? reference;
+    private string? checkoutUrl;
+    private OnlinePaymentDto? status;
+
+    private string BackHref => CurrentUser.IsInRole(Roles.Parent) && invoice is not null
+        ? $"portal/students/{invoice.Detail.Invoice.StudentId}?tab=2"
+        : "portal/student/fees";
+
+    protected override Task OnParametersSetAsync() => LoadDataAsync();
+
+    private Task LoadDataAsync() => LoadAsync(async () =>
+    {
+        invoice = await Portal.InvoiceAsync(InvoiceId);
+        if (invoice is not null) amount = invoice.Detail.Invoice.Balance;
+    });
+
+    private async Task StartAsync()
+    {
+        var result = await RunAsync(() => Portal.StartPaymentAsync(InvoiceId, amount));
+        if (result is { Succeeded: true, Data: { } started })
+        {
+            reference = started.Reference;
+            checkoutUrl = started.RedirectUrl;
+            await Platform.OpenExternalAsync(started.RedirectUrl);
+        }
+    }
+
+    private async Task CheckAsync()
+    {
+        if (reference is null) return;
+        var result = await RunAsync(() => Portal.ConfirmPaymentAsync(reference));
+        status = result.Data;
+        if (status?.StatusCode == "SUCCEEDED")
+            Success("Payment confirmed. Thank you!");
+    }
+}

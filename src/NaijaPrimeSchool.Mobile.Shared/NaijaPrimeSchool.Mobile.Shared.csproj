@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <!--
+    The whole user interface (pages, layout, Radzen components) plus the
+    client-side infrastructure that talks to NaijaPrimeSchool.Mobile.Api.
+    Rendered by two hosts:
+      * NaijaPrimeSchool.Mobile     - .NET MAUI Blazor Hybrid (Android, iOS, macOS, Windows)
+      * NaijaPrimeSchool.Mobile.Web - Blazor Web App, Auto render mode (Linux and any browser)
+    Platform-specific pieces (secure token storage, opening the browser) are
+    behind interfaces in Services/Platform and implemented by each host.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <SupportedPlatform Include="browser" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.7" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.Authorization" Version="10.0.7" />
+    <PackageReference Include="Radzen.Blazor" Version="10.3.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NaijaPrimeSchool.Mobile.Contracts\NaijaPrimeSchool.Mobile.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

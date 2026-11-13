@@ -1,0 +1,79 @@
+@* Touch-friendly register: one row per pupil with a segmented control of
+   the attendance statuses (rows from the AttendanceStatuses lookup table). *@
+<div class="nps-register-tools">
+    <span class="nps-muted">@Summary</span>
+    @if (!ReadOnly && Statuses.Count > 0)
+    {
+        <RadzenButton Text="All present" Icon="done_all" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.ExtraSmall" Click="MarkAllPresent" />
+    }
+</div>
+<div class="nps-list">
+    @foreach (var row in Rows)
+    {
+        <div class="nps-row nps-register-row">
+            <div class="nps-row-leading"><StudentAvatar PhotoUrl="@row.PhotoUrl" FirstName="@row.FirstName" LastName="@row.LastName" /></div>
+            <div class="nps-row-main">
+                <span class="nps-row-title">@row.Name</span>
+                <span class="nps-row-sub">@row.AdmissionNumber</span>
+                <div class="nps-status-picker">
+                    @foreach (var s in Statuses)
+                    {
+                        <button type="button" disabled="@ReadOnly" title="@s.Name"
+                                class="nps-status-chip nps-status-@(s.Code?.ToLowerInvariant()) @(row.StatusId == s.Id ? "selected" : null)"
+                                @onclick="() => Set(row, s.Id)">@(s.Code ?? s.Name)</button>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    public sealed class MarkRow
+    {
+        public Guid? EntryId { get; set; }
+        public Guid StudentId { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string AdmissionNumber { get; set; } = string.Empty;
+        public string? FirstName { get; set; }
+        public string? LastName { get; set; }
+        public string? PhotoUrl { get; set; }
+        public Guid StatusId { get; set; }
+        public TimeOnly? ArrivalTime { get; set; }
+        public string? Remarks { get; set; }
+    }
+
+    [Parameter] public List<MarkRow> Rows { get; set; } = [];
+    [Parameter] public List<LookupDto> Statuses { get; set; } = [];
+    [Parameter] public bool ReadOnly { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private string Summary
+    {
+        get
+        {
+            var parts = Statuses
+                .Select(s => (s.Code ?? s.Name, Rows.Count(r => r.StatusId == s.Id)))
+                .Where(p => p.Item2 > 0)
+                .Select(p => $"{p.Item1}: {p.Item2}");
+            return $"{Rows.Count} pupils · {string.Join(" · ", parts)}";
+        }
+    }
+
+    private async Task Set(MarkRow row, Guid statusId)
+    {
+        if (ReadOnly) return;
+        row.StatusId = statusId;
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task MarkAllPresent()
+    {
+        // "P" is the Present row's code in the AttendanceStatuses table (the
+        // same code the web register uses); fall back to the first row by
+        // display order.
+        var present = (Statuses.FirstOrDefault(s => s.Code == "P") ?? Statuses[0]).Id;
+        foreach (var r in Rows) r.StatusId = present;
+        await OnChanged.InvokeAsync();
+    }
+}

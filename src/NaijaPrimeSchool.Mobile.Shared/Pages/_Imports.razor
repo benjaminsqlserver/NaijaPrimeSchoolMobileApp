@@ -1,0 +1,5 @@
+@* Every page requires a signed-in user unless it says [AllowAnonymous];
+   role-specific pages narrow this with [Authorize(Roles = RoleGroups.X)],
+   the same role groups the web app's pages use. *@
+@attribute [Authorize]
+@inherits AppPage

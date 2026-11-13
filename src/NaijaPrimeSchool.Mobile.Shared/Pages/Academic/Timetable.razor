@@ -1,0 +1,63 @@
+@page "/timetable"
+@attribute [Authorize(Roles = RoleGroups.AcademicStaff)]
+@inject AcademicClient Academic
+
+<PageHeader Title="Timetable" Subtitle="Weekly lessons for a class" />
+
+<ClassTermPicker @bind-ClassId="classId" @bind-TermId="termId" CurrentUserId="CurrentUserId" OnChanged="LoadDataAsync" />
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (entries.Count == 0)
+    {
+        <EmptyState Icon="grid_on" Title="No lessons scheduled" Message="The timetable for this class and term has not been set up yet." />
+    }
+    else
+    {
+        <RadzenSelectBar @bind-Value="day" TValue="string" Size="ButtonSize.Small" class="nps-days">
+            <Items>
+                @foreach (var d in days)
+                {
+                    <RadzenSelectBarItem Text="@ShortDay(d)" Value="@d" />
+                }
+            </Items>
+        </RadzenSelectBar>
+        <div class="nps-list">
+            @foreach (var e in entries.Where(e => e.WeekDayName == day).OrderBy(e => e.PeriodOrder))
+            {
+                <ListRow Title="@e.SubjectName" Subtitle="@($"{e.PeriodName} · {Format.Time(e.PeriodStart)}–{Format.Time(e.PeriodEnd)}{(string.IsNullOrEmpty(e.Room) ? "" : " · " + e.Room)}")">
+                    <Leading><span class="nps-code">@e.SubjectCode</span></Leading>
+                    <Trailing>
+                        <div class="nps-right">
+                            <small class="nps-muted">@e.TeacherName</small>
+                            <a class="nps-link" href="@($"attendance/subject?entry={e.Id}")">Register</a>
+                        </div>
+                    </Trailing>
+                </ListRow>
+            }
+        </div>
+    }
+</PageState>
+
+@code {
+    private Guid? classId;
+    private Guid? termId;
+    private List<TimetableEntryDto> entries = [];
+    private List<string> days = [];
+    private string day = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        Loading = false;
+    }
+
+    private Task LoadDataAsync() => LoadAsync(async () =>
+    {
+        entries = classId is { } c && termId is { } t ? await Academic.TimetableAsync(t, c) : [];
+        days = entries.OrderBy(e => e.WeekDayOrder).Select(e => e.WeekDayName).Distinct().ToList();
+        var today = DateTime.Today.DayOfWeek.ToString();
+        day = days.FirstOrDefault(d => d.Equals(today, StringComparison.OrdinalIgnoreCase)) ?? days.FirstOrDefault() ?? string.Empty;
+    });
+
+    private static string ShortDay(string d) => d.Length > 3 ? d[..3] : d;
+}

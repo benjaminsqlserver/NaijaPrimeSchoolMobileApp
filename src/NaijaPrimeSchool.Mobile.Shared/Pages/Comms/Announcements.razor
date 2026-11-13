@@ -1,0 +1,82 @@
+@page "/announcements"
+@attribute [Authorize(Roles = RoleGroups.PortalViewers)]
+@inject CommsClient Comms
+
+<PageHeader Title="Announcements" Subtitle="Notices from the school">
+    <Actions>
+        @if (IsInAnyRole(RoleGroups.SchoolLeaders))
+        {
+            <RadzenButton Text="Manage" Icon="edit_notifications" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small"
+                          Click="@(() => Nav.NavigateTo("manage/announcements"))" />
+        }
+    </Actions>
+</PageHeader>
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (items.Count == 0)
+    {
+        <EmptyState Icon="campaign" Title="No announcements" Message="New notices from the school will appear here." />
+    }
+    @foreach (var a in items)
+    {
+        var open = expanded.Contains(a.Id);
+        <div class="nps-card nps-announcement @(a.ReadByCurrentUser ? null : "nps-announcement-unread")">
+            <button type="button" class="nps-announcement-head" @onclick="() => ToggleAsync(a)">
+                <span class="rzi">@(a.IsPinned ? "push_pin" : "campaign")</span>
+                <span class="nps-announcement-title">
+                    <strong>@a.Title</strong>
+                    <small class="nps-muted">@a.CategoryName · @Format.Date(a.PublishedOn) @(a.PostedByName is null ? "" : $"· {a.PostedByName}")</small>
+                </span>
+                @if (!a.ReadByCurrentUser)
+                {
+                    <RadzenBadge BadgeStyle="BadgeStyle.Warning" IsPill="true" Text="New" />
+                }
+                <span class="rzi">@(open ? "expand_less" : "expand_more")</span>
+            </button>
+            @if (open)
+            {
+                <div class="nps-announcement-body">@a.Body</div>
+                @if (a.ExpiresOn is not null)
+                {
+                    <small class="nps-muted">Until @Format.Date(a.ExpiresOn)</small>
+                }
+            }
+        </div>
+    }
+</PageState>
+
+@code {
+    private List<AnnouncementDto> items = [];
+    private readonly HashSet<Guid> expanded = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await LoadDataAsync();
+    }
+
+    private Task LoadDataAsync() => LoadAsync(async () =>
+        items = (await Comms.MyAnnouncementsAsync())
+            .OrderByDescending(a => a.IsPinned)
+            .ThenByDescending(a => a.PublishedOn)
+            .ToList());
+
+    private async Task ToggleAsync(AnnouncementDto a)
+    {
+        if (!expanded.Add(a.Id))
+        {
+            expanded.Remove(a.Id);
+            return;
+        }
+        if (!a.ReadByCurrentUser)
+        {
+            // Reading it in the app also cancels the pending email / SMS reminder.
+            var result = await Comms.MarkReadAsync(a.Id);
+            if (result.Succeeded)
+            {
+                a.ReadByCurrentUser = true;
+                await App.RefreshBadgesAsync(announcements: true, messages: false);
+            }
+        }
+    }
+}

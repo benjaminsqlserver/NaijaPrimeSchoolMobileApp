@@ -1,0 +1,53 @@
+@page "/portal/parent"
+@attribute [Authorize(Roles = Roles.Parent)]
+@inject PortalClient Portal
+
+<PageHeader Title="My wards" Subtitle="@dashboard?.ParentFullName" />
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (dashboard is null)
+    {
+        <EmptyState Icon="family_restroom" Title="No parent record linked to this account"
+                    Message="Please contact the school office so they can link your account." />
+    }
+    else if (dashboard.Wards.Count == 0)
+    {
+        <EmptyState Icon="family_restroom" Title="No wards linked yet" Message="Ask the school office to link your children to your account." />
+    }
+    else
+    {
+        @foreach (var w in dashboard.Wards)
+        {
+            <a class="nps-card nps-ward" href="@($"portal/students/{w.StudentId}")">
+                <StudentAvatar PhotoUrl="@w.PhotoUrl" FirstName="@w.FirstName" LastName="@w.LastName" Size="large" />
+                <div class="nps-ward-main">
+                    <h2>@w.FullName</h2>
+                    <p class="nps-muted">@w.AdmissionNumber · @(w.CurrentSchoolClassName ?? "Not currently enrolled")</p>
+                    <div class="nps-chips">
+                        <RadzenBadge BadgeStyle="BadgeStyle.Light" IsPill="true" Text="@w.Relationship" />
+                        @if (w.IsPrimaryContact) { <RadzenBadge BadgeStyle="BadgeStyle.Success" Shade="Shade.Lighter" IsPill="true" Text="Primary contact" /> }
+                        @if (w.CanPickUp) { <RadzenBadge BadgeStyle="BadgeStyle.Info" Shade="Shade.Lighter" IsPill="true" Text="Can pick up" /> }
+                    </div>
+                    <div class="nps-ward-stats">
+                        <span><span class="rzi">event_available</span>@Format.Percent(w.LatestAttendancePercentage)</span>
+                        <span class="@(w.OutstandingBalance > 0 ? "nps-danger" : null)"><span class="rzi">payments</span>@Format.Money(w.OutstandingBalance)</span>
+                        <span><span class="rzi">description</span>@w.PublishedReportCardCount report card(s)</span>
+                    </div>
+                </div>
+                <span class="rzi nps-chevron">chevron_right</span>
+            </a>
+        }
+    }
+</PageState>
+
+@code {
+    private ParentDashboardDto? dashboard;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await LoadDataAsync();
+    }
+
+    private Task LoadDataAsync() => LoadAsync(async () => dashboard = await Portal.ParentAsync());
+}

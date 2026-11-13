@@ -1,0 +1,111 @@
+@page "/messages/{Id:guid}"
+@attribute [Authorize(Roles = RoleGroups.Messaging)]
+@implements IDisposable
+@inject CommsClient Comms
+
+<PageHeader Title="@(thread?.Subject ?? "Conversation")"
+            Subtitle="@(thread is null ? null : IsStaff ? $"{thread.FamilyName} ({thread.FamilyRole}){(thread.StudentName is null ? "" : $" · about {thread.StudentName}")}" : thread.StudentName is null ? "School office" : $"About {thread.StudentName}")"
+            BackHref="messages">
+    <Actions>
+        @if (thread is not null && IsStaff)
+        {
+            <RadzenButton Text="@(thread.IsClosed ? "Reopen" : "Resolve")" Icon="@(thread.IsClosed ? "undo" : "task_alt")"
+                          ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" IsBusy="Busy" Click="ToggleClosedAsync" />
+        }
+    </Actions>
+</PageHeader>
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    @if (thread is null)
+    {
+        <EmptyState Icon="forum" Title="Conversation not found" />
+    }
+    else
+    {
+        <div class="nps-chat">
+            @foreach (var m in thread.Messages)
+            {
+                <div class="nps-bubble @(m.IsMine ? "nps-bubble-mine" : "nps-bubble-theirs")">
+                    <div class="nps-bubble-meta">@(m.IsMine ? "You" : m.SenderName) · @Format.DateTime(m.SentOn)</div>
+                    <div class="nps-bubble-body">@m.Body</div>
+                </div>
+            }
+        </div>
+
+        @if (thread.IsClosed)
+        {
+            <RadzenAlert AlertStyle="AlertStyle.Info" Shade="Shade.Lighter" AllowClose="false">
+                This conversation has been resolved. @(IsStaff ? "Reopen it to reply." : "Replying will reopen it.")
+            </RadzenAlert>
+        }
+        @if (!thread.IsClosed || !IsStaff)
+        {
+            <div class="nps-composer">
+                <RadzenTextArea @bind-Value="reply" Rows="2" Placeholder="Write a reply…" Style="flex:1" MaxLength="4000" />
+                <RadzenButton Icon="send" IsBusy="Busy" Disabled="string.IsNullOrWhiteSpace(reply)" Click="SendAsync" aria-label="Send" />
+            </div>
+        }
+    }
+</PageState>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private MessageThreadDto? thread;
+    private string? reply;
+    private Timer? poller;
+
+    private bool IsStaff => IsInAnyRole(RoleGroups.SchoolLeaders);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadDataAsync();
+        await App.RefreshBadgesAsync(announcements: false, messages: true);
+
+        // Like the web page, an open conversation refreshes itself so new
+        // replies appear without pulling down.
+        poller?.Dispose();
+        poller = new Timer(async _ => await InvokeAsync(PollAsync), null, TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(20));
+    }
+
+    private Task LoadDataAsync() => LoadAsync(async () => thread = await Comms.ThreadAsync(Id));
+
+    private async Task PollAsync()
+    {
+        if (Busy || thread is null) return;
+        try
+        {
+            var latest = await Comms.ThreadAsync(Id);
+            if (latest is not null && latest.Messages.Count != thread.Messages.Count)
+            {
+                thread = latest;
+                StateHasChanged();
+            }
+        }
+        catch (ApiException)
+        {
+            // Try again on the next tick.
+        }
+    }
+
+    private async Task SendAsync()
+    {
+        var text = reply?.Trim();
+        if (string.IsNullOrEmpty(text)) return;
+        if (await RunAsync(() => Comms.ReplyAsync(Id, text)))
+        {
+            reply = null;
+            thread = await Comms.ThreadAsync(Id);
+        }
+    }
+
+    private async Task ToggleClosedAsync()
+    {
+        if (thread is null) return;
+        var close = !thread.IsClosed;
+        if (await RunAsync(() => Comms.SetClosedAsync(Id, close), close ? "Marked as resolved." : "Conversation reopened."))
+            thread = await Comms.ThreadAsync(Id);
+    }
+
+    public void Dispose() => poller?.Dispose();
+}

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    Blazor Web App host (Interactive Auto) for the shared mobile UI. .NET MAUI
+    has no Linux target, so Linux desktops - and any device with a browser -
+    use the app through this host. It stores nothing itself: like the MAUI
+    app it talks to NaijaPrimeSchool.Mobile.Api with the signed-in user's JWT.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NaijaPrimeSchool.Mobile.Web.Client\NaijaPrimeSchool.Mobile.Web.Client.csproj" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.7" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,72 @@
+@page "/messages/new"
+@attribute [Authorize(Roles = RoleGroups.Messaging)]
+@inject CommsClient Comms
+
+<PageHeader Title="New message" Subtitle="@(IsStaff ? "Write to a parent or student" : "Write to the school office")" BackHref="messages" />
+
+<PageState Loading="Loading" Error="@LoadError" OnRetry="LoadDataAsync">
+    <div class="nps-card">
+        <EditForm Model="model" OnValidSubmit="SendAsync" class="nps-form">
+            @if (IsStaff)
+            {
+                <div class="nps-field">
+                    <label>To</label>
+                    <RadzenDropDown @bind-Value="model.FamilyUserId" Data="recipients" TextProperty="Display" ValueProperty="UserId"
+                                    AllowFiltering="true" FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
+                                    Placeholder="Choose a parent or student" Change="RecipientChangedAsync" Style="width:100%" />
+                </div>
+            }
+            @if (students.Count > 0)
+            {
+                <div class="nps-field">
+                    <label>About (optional)</label>
+                    <RadzenDropDown @bind-Value="model.StudentId" Data="students" TextProperty="Name" ValueProperty="StudentId"
+                                    AllowClear="true" Placeholder="General" Style="width:100%" />
+                </div>
+            }
+            <div class="nps-field">
+                <label>Subject</label>
+                <RadzenTextBox @bind-Value="model.Subject" MaxLength="150" Style="width:100%" />
+            </div>
+            <div class="nps-field">
+                <label>Message</label>
+                <RadzenTextArea @bind-Value="model.Body" Rows="6" MaxLength="4000" Style="width:100%" />
+            </div>
+            <RadzenButton ButtonType="ButtonType.Submit" Text="Send" Icon="send" IsBusy="Busy"
+                          Disabled="@(string.IsNullOrWhiteSpace(model.Subject) || string.IsNullOrWhiteSpace(model.Body) || (IsStaff && model.FamilyUserId is null))" />
+        </EditForm>
+    </div>
+</PageState>
+
+@code {
+    private readonly StartThreadRequest model = new();
+    private List<MessageRecipientDto> recipients = [];
+    private List<MessageStudentOptionDto> students = [];
+
+    private bool IsStaff => IsInAnyRole(RoleGroups.SchoolLeaders);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await LoadDataAsync();
+    }
+
+    private Task LoadDataAsync() => LoadAsync(async () =>
+    {
+        if (IsStaff) recipients = await Comms.RecipientsAsync();
+        else students = await Comms.StudentOptionsAsync(null);
+    });
+
+    private async Task RecipientChangedAsync()
+    {
+        model.StudentId = null;
+        students = model.FamilyUserId is { } id ? await Comms.StudentOptionsAsync(id) : [];
+    }
+
+    private async Task SendAsync()
+    {
+        var result = await RunAsync(() => Comms.StartThreadAsync(model), "Message sent.");
+        if (result is { Succeeded: true, Data: { } created })
+            Nav.NavigateTo($"messages/{created.Id}", replace: true);
+    }
+}

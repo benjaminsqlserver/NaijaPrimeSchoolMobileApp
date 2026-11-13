@@ -1,0 +1,6 @@
+﻿@page "/not-found"
+@attribute [AllowAnonymous]
+
+<EmptyState Icon="travel_explore" Title="Page not found" Message="That screen does not exist in the app.">
+    <RadzenButton Text="Go home" Icon="home" Click="@(() => Nav.NavigateTo(""))" />
+</EmptyState>

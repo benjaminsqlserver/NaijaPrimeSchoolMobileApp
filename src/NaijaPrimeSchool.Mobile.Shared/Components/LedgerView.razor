@@ -1,0 +1,67 @@
+@* A pupil's fee ledger: totals, invoices (with a Pay button for families
+   when online payment is on) and receipts. *@
+@if (Ledger is null)
+{
+    <EmptyState Icon="receipt_long" Title="No fee records yet" />
+}
+else
+{
+    <div class="nps-stats">
+        <StatTile Icon="request_quote" Label="Invoiced" Value="@Format.Money(Ledger.TotalInvoiced)" Tone="blue" />
+        <StatTile Icon="savings" Label="Paid" Value="@Format.Money(Ledger.TotalPaid)" />
+        <StatTile Icon="warning" Label="Outstanding" Value="@Format.Money(Ledger.OutstandingBalance)"
+                  Tone="@(Ledger.OutstandingBalance > 0 ? "red" : "green")" />
+    </div>
+
+    <h3 class="nps-section-title">Invoices</h3>
+    @if (Ledger.Invoices.Count == 0)
+    {
+        <EmptyState Icon="request_quote" Title="No invoices issued" />
+    }
+    <div class="nps-list">
+        @foreach (var inv in Ledger.Invoices.OrderByDescending(i => i.IssuedOn))
+        {
+            <ListRow Href="@InvoiceHref?.Invoke(inv)" Title="@inv.InvoiceNumber" Subtitle="@($"{inv.TermName} · {inv.SessionName} · due {Format.Date(inv.DueDate)}")">
+                <Trailing>
+                    <div class="nps-right">
+                        <span class="nps-amount">@Format.Money(inv.Balance)</span>
+                        <StatusBadge Code="@inv.InvoiceStatusCode" Text="@inv.InvoiceStatusName" />
+                    </div>
+                </Trailing>
+                <Extra>
+                    @if (CanPay && inv.Balance > 0 && inv.InvoiceStatusCode != "CANCELLED")
+                    {
+                        <a class="rz-button rz-button-sm rz-primary nps-pay" href="@($"portal/pay/{inv.Id}")" @onclick:stopPropagation>
+                            <span class="rzi">credit_card</span> Pay online
+                        </a>
+                    }
+                </Extra>
+            </ListRow>
+        }
+    </div>
+
+    <h3 class="nps-section-title">Payments</h3>
+    @if (Ledger.Payments.Count == 0)
+    {
+        <EmptyState Icon="savings" Title="No payments yet" />
+    }
+    <div class="nps-list">
+        @foreach (var p in Ledger.Payments.OrderByDescending(p => p.PaidOn))
+        {
+            <ListRow Title="@p.ReceiptNumber" Subtitle="@($"{Format.Date(p.PaidOn)} · {p.PaymentMethodName}")">
+                <Trailing>
+                    <div class="nps-right">
+                        <span class="nps-amount">@Format.Money(p.Amount)</span>
+                        <StatusBadge Code="@p.PaymentStatusCode" Text="@p.PaymentStatusName" />
+                    </div>
+                </Trailing>
+            </ListRow>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public StudentLedgerDto? Ledger { get; set; }
+    [Parameter] public bool CanPay { get; set; }
+    [Parameter] public Func<InvoiceDto, string?>? InvoiceHref { get; set; }
+}
